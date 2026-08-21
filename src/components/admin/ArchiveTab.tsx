@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import JSZip from 'jszip'
 import {
   Star,
   Download,
@@ -10,6 +11,7 @@ import {
   Check,
   X,
   Share2,
+  Loader2,
 } from 'lucide-react'
 import {
   getArchive,
@@ -23,6 +25,8 @@ import {
 export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => void }) {
   const [items, setItems] = useState<ArchiveItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [zipping, setZipping] = useState(false)
+  const [zipProgress, setZipProgress] = useState(0)
   const [search, setSearch] = useState('')
   const [filterFav, setFilterFav] = useState(false)
   const [selectedItem, setSelectedItem] = useState<ArchiveItem | null>(null)
@@ -212,15 +216,49 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
     }
   }
 
-  const downloadAll = () => {
-    items.forEach((item, idx) => {
+  const downloadAll = async () => {
+    if (items.length === 0 || zipping) return
+    setZipping(true)
+    setZipProgress(0)
+
+    try {
+      const zip = new JSZip()
+      const folder = zip.folder('itguild-photobooth-archive') || zip
+
+      for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx]
+        const dataUrl = item.stripDataUrl
+        const base64Data = dataUrl.split(',')[1] || dataUrl
+        const dateStr = new Date(item.timestamp).toISOString().slice(0, 10)
+        const filename = `strip-${dateStr}-${String(idx + 1).padStart(3, '0')}.png`
+        folder.file(filename, base64Data, { base64: true })
+        setZipProgress(Math.round(((idx + 1) / items.length) * 50))
+      }
+
+      const blob = await zip.generateAsync(
+        { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } },
+        (metadata) => {
+          setZipProgress(50 + Math.round(metadata.percent / 2))
+        }
+      )
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `itguild-photobooth-archive-${new Date().toISOString().slice(0, 10)}.zip`
+      document.body.appendChild(a)
+      a.click()
       setTimeout(() => {
-        const a = document.createElement('a')
-        a.href = item.stripDataUrl
-        a.download = `photobooth-${new Date(item.timestamp).toISOString().slice(0, 10)}-${idx + 1}.png`
-        a.click()
-      }, idx * 250)
-    })
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      }, 2000)
+    } catch (err) {
+      console.error('ZIP generation error:', err)
+      alert('Failed to generate ZIP file. Please try again.')
+    } finally {
+      setZipping(false)
+      setZipProgress(0)
+    }
   }
 
   const filtered = items.filter((item) => {
@@ -260,11 +298,21 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
         <div className="flex items-center gap-2">
           <button
             onClick={downloadAll}
-            disabled={items.length === 0}
-            className="btn95 !px-3 !py-1.5 text-xs font-bold flex items-center gap-1.5"
+            disabled={items.length === 0 || zipping}
+            className="btn95 is-primary !px-3 !py-1.5 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            title="Download all archived photo strips as a single ZIP file"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Download All ({items.length})</span>
+            {zipping ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Creating ZIP ({zipProgress}%)...</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5" />
+                <span>Download All ZIP ({items.length})</span>
+              </>
+            )}
           </button>
           <button
             onClick={handleClearAll}
