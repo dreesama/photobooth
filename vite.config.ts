@@ -2,6 +2,7 @@ import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
+import fs from 'node:fs'
 
 import siteConfiguration from './.figma/make/site.json'
 
@@ -360,6 +361,46 @@ function figmaMakeKitPlugin(options: { storiesGlob: string | string[] }): Plugin
 
 function cloudUploadPlugin(): Plugin {
   const photoCache = new Map<string, Buffer>()
+  const dataDir = path.resolve(__dirname, './.data')
+
+  if (!fs.existsSync(dataDir)) {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true })
+    } catch {}
+  }
+
+  function readJson(filename: string, defaultValue: any) {
+    try {
+      const filePath = path.join(dataDir, filename)
+      if (fs.existsSync(filePath)) {
+        return JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+      }
+    } catch {}
+    return defaultValue
+  }
+
+  function writeJson(filename: string, data: any) {
+    try {
+      const filePath = path.join(dataDir, filename)
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8')
+    } catch (e) {
+      console.warn(`Failed to write ${filename}:`, e)
+    }
+  }
+
+  function parseJsonBody(req: any): Promise<any> {
+    return new Promise((resolve) => {
+      let body = ''
+      req.on('data', (chunk: any) => (body += chunk))
+      req.on('end', () => {
+        try {
+          resolve(JSON.parse(body))
+        } catch {
+          resolve({})
+        }
+      })
+    })
+  }
 
   function getLocalLanIp() {
     try {
@@ -394,50 +435,268 @@ function cloudUploadPlugin(): Plugin {
   }
 
   function setupMiddlewares(middlewares: any) {
-    // 1. Upload & Cache Image
-    middlewares.use('/api/upload', async (req: any, res: any, next: any) => {
+    // 0. Universal CORS and JSON Headers Helper
+    middlewares.use('/api/', (req: any, res: any, next: any) => {
       res.setHeader('Access-Control-Allow-Origin', '*')
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
       if (req.method === 'OPTIONS') {
         res.statusCode = 204
         res.end()
         return
       }
-
-      if (req.method !== 'POST') return next()
-
-      let body = ''
-      req.on('data', (chunk: any) => {
-        body += chunk
-      })
-
-      req.on('end', async () => {
-        try {
-          const { dataUrl } = JSON.parse(body)
-          const base64Data = dataUrl.split(',')[1] || dataUrl
-          const buffer = Buffer.from(base64Data, 'base64')
-          const id = `photo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
-
-          photoCache.set(id, buffer)
-
-          const baseUrl = getBaseUrl(req)
-          const mobileUrl = `${baseUrl}/photo/${id}`
-
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ url: mobileUrl, id }))
-        } catch (err: any) {
-          res.statusCode = 500
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ error: err.message }))
-        }
-      })
+      next()
     })
 
-    // 2. Direct Raw Image Stream
+    // 1. Sync All Server Assets (GET /api/sync/all)
+    middlewares.use('/api/sync/all', (req: any, res: any) => {
+      const archive = readJson('archive.json', [])
+      const props = readJson('props.json', [])
+      const stickers = readJson('stickers.json', [])
+      const backgrounds = readJson('backgrounds.json', [])
+      const hidden = readJson('hidden.json', { props: [], stickers: [], backgrounds: [] })
+      const settings = readJson('settings.json', null)
+
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ archive, props, stickers, backgrounds, hidden, settings }))
+    })
+
+    // 2. Custom Stickers Sync (GET, POST, DELETE)
+    middlewares.use('/api/sync/stickers', async (req: any, res: any, next: any) => {
+      const url = req.url || ''
+      if (url.includes('/delete') && req.method === 'POST') {
+        const { id } = await parseJsonBody(req)
+        const stickers = readJson('stickers.json', [])
+        const filtered = stickers.filter((s: any) => s.id !== id)
+        writeJson('stickers.json', filtered)
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ ok: true, stickers: filtered }))
+        return
+      }
+
+      if (req.method === 'GET') {
+        const stickers = readJson('stickers.json', [])
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify(stickers))
+        return
+      }
+
+      if (req.method === 'POST') {
+        const body = await parseJsonBody(req)
+        const sticker = body.sticker || body
+        if (sticker && sticker.id) {
+          const stickers = readJson('stickers.json', [])
+          const idx = stickers.findIndex((s: any) => s.id === sticker.id)
+          if (idx >= 0) stickers[idx] = sticker
+          else stickers.push(sticker)
+          writeJson('stickers.json', stickers)
+        }
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ ok: true }))
+        return
+      }
+
+      next()
+    })
+
+    // 3. Custom Props Sync (GET, POST, DELETE)
+    middlewares.use('/api/sync/props', async (req: any, res: any, next: any) => {
+      const url = req.url || ''
+      if (url.includes('/delete') && req.method === 'POST') {
+        const { id } = await parseJsonBody(req)
+        const props = readJson('props.json', [])
+        const filtered = props.filter((p: any) => p.id !== id)
+        writeJson('props.json', filtered)
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ ok: true, props: filtered }))
+        return
+      }
+
+      if (req.method === 'GET') {
+        const props = readJson('props.json', [])
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify(props))
+        return
+      }
+
+      if (req.method === 'POST') {
+        const body = await parseJsonBody(req)
+        const prop = body.prop || body
+        if (prop && prop.id) {
+          const props = readJson('props.json', [])
+          const idx = props.findIndex((p: any) => p.id === prop.id)
+          if (idx >= 0) props[idx] = prop
+          else props.push(prop)
+          writeJson('props.json', props)
+        }
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ ok: true }))
+        return
+      }
+
+      next()
+    })
+
+    // 4. Custom Backgrounds Sync (GET, POST, DELETE)
+    middlewares.use('/api/sync/backgrounds', async (req: any, res: any, next: any) => {
+      const url = req.url || ''
+      if (url.includes('/delete') && req.method === 'POST') {
+        const { id } = await parseJsonBody(req)
+        const backgrounds = readJson('backgrounds.json', [])
+        const filtered = backgrounds.filter((b: any) => b.id !== id)
+        writeJson('backgrounds.json', filtered)
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ ok: true, backgrounds: filtered }))
+        return
+      }
+
+      if (req.method === 'GET') {
+        const backgrounds = readJson('backgrounds.json', [])
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify(backgrounds))
+        return
+      }
+
+      if (req.method === 'POST') {
+        const body = await parseJsonBody(req)
+        const bg = body.background || body
+        if (bg && bg.id) {
+          const backgrounds = readJson('backgrounds.json', [])
+          const idx = backgrounds.findIndex((b: any) => b.id === bg.id)
+          if (idx >= 0) backgrounds[idx] = bg
+          else backgrounds.push(bg)
+          writeJson('backgrounds.json', backgrounds)
+        }
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ ok: true }))
+        return
+      }
+
+      next()
+    })
+
+    // 5. Photo Archive Sync (GET, POST, DELETE, CLEAR, FAVORITE)
+    middlewares.use('/api/sync/archive', async (req: any, res: any, next: any) => {
+      const url = req.url || ''
+      if (url.includes('/clear') && req.method === 'POST') {
+        writeJson('archive.json', [])
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ ok: true }))
+        return
+      }
+
+      if (url.includes('/delete') && req.method === 'POST') {
+        const { id } = await parseJsonBody(req)
+        const archive = readJson('archive.json', [])
+        const filtered = archive.filter((a: any) => a.id !== id)
+        writeJson('archive.json', filtered)
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ ok: true, archive: filtered }))
+        return
+      }
+
+      if (url.includes('/favorite') && req.method === 'POST') {
+        const { id } = await parseJsonBody(req)
+        const archive = readJson('archive.json', [])
+        let fav = false
+        const updated = archive.map((a: any) => {
+          if (a.id === id) {
+            fav = !a.favorite
+            return { ...a, favorite: fav }
+          }
+          return a
+        })
+        writeJson('archive.json', updated)
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ ok: true, favorite: fav }))
+        return
+      }
+
+      if (req.method === 'GET') {
+        const archive = readJson('archive.json', [])
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify(archive))
+        return
+      }
+
+      if (req.method === 'POST') {
+        const body = await parseJsonBody(req)
+        const item = body.item || body
+        if (item && item.id) {
+          const archive = readJson('archive.json', [])
+          const idx = archive.findIndex((a: any) => a.id === item.id)
+          if (idx >= 0) archive[idx] = item
+          else archive.unshift(item)
+          writeJson('archive.json', archive)
+        }
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ ok: true }))
+        return
+      }
+
+      next()
+    })
+
+    // 6. Hidden Assets Sync (GET, POST)
+    middlewares.use('/api/sync/hidden', async (req: any, res: any, next: any) => {
+      if (req.method === 'GET') {
+        const hidden = readJson('hidden.json', { props: [], stickers: [], backgrounds: [] })
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify(hidden))
+        return
+      }
+
+      if (req.method === 'POST') {
+        const body = await parseJsonBody(req)
+        const current = readJson('hidden.json', { props: [], stickers: [], backgrounds: [] })
+        if (body.type && body.id) {
+          const list: string[] = current[body.type] || []
+          const nextList = list.includes(body.id)
+            ? list.filter((x: string) => x !== body.id)
+            : [...list, body.id]
+          current[body.type] = nextList
+          writeJson('hidden.json', current)
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ ok: true, hidden: current }))
+          return
+        }
+        if (body.hidden) {
+          writeJson('hidden.json', body.hidden)
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ ok: true }))
+          return
+        }
+      }
+
+      next()
+    })
+
+    // 7. Upload & Cache Image for QR
+    middlewares.use('/api/upload', async (req: any, res: any, next: any) => {
+      if (req.method !== 'POST') return next()
+
+      try {
+        const { dataUrl } = await parseJsonBody(req)
+        const base64Data = dataUrl.split(',')[1] || dataUrl
+        const buffer = Buffer.from(base64Data, 'base64')
+        const id = `photo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+
+        photoCache.set(id, buffer)
+
+        const baseUrl = getBaseUrl(req)
+        const mobileUrl = `${baseUrl}/photo/${id}`
+
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ url: mobileUrl, id }))
+      } catch (err: any) {
+        res.statusCode = 500
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ error: err.message }))
+      }
+    })
+
+    // 8. Direct Raw Image Stream
     middlewares.use('/api/raw/', (req: any, res: any, next: any) => {
-      res.setHeader('Access-Control-Allow-Origin', '*')
       const id = req.url?.replace('/', '').split('?')[0] || ''
       const buffer = photoCache.get(id)
       if (buffer) {
@@ -450,9 +709,8 @@ function cloudUploadPlugin(): Plugin {
       }
     })
 
-    // 3. Direct Image Download Attachment
+    // 9. Direct Image Download Attachment
     middlewares.use('/api/download/', (req: any, res: any, next: any) => {
-      res.setHeader('Access-Control-Allow-Origin', '*')
       const id = req.url?.replace('/', '').split('?')[0] || ''
       const buffer = photoCache.get(id)
       if (buffer) {
@@ -465,7 +723,7 @@ function cloudUploadPlugin(): Plugin {
       }
     })
 
-    // 4. Mobile Web Photo Viewer Page
+    // 10. Mobile Web Photo Viewer Page
     middlewares.use('/photo/', (req: any, res: any, next: any) => {
       const id = req.url?.replace('/', '').split('?')[0] || ''
       const buffer = photoCache.get(id)

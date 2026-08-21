@@ -95,6 +95,24 @@ function openDB(): Promise<IDBDatabase> {
   })
 }
 
+/* ================= CLOUD SYNC HELPER ================= */
+
+async function syncFetch<T>(endpoint: string, options?: RequestInit): Promise<T | null> {
+  try {
+    const res = await fetch(endpoint, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options?.headers || {}),
+      },
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
 /* ================= ARCHIVE OPERATIONS ================= */
 
 export async function saveToArchive(
@@ -108,6 +126,14 @@ export async function saveToArchive(
     favorite: item.favorite || false,
     printedCount: item.printedCount || 0,
   }
+
+  // 1. Sync to Cloud Server
+  syncFetch('/api/sync/archive', {
+    method: 'POST',
+    body: JSON.stringify(completeItem),
+  }).catch(() => {})
+
+  // 2. Persist to Local IndexedDB
   return new Promise((resolve, reject) => {
     const tx = db.transaction('archive', 'readwrite')
     const store = tx.objectStore('archive')
@@ -119,6 +145,19 @@ export async function saveToArchive(
 
 export async function getArchive(): Promise<ArchiveItem[]> {
   const db = await openDB()
+
+  // 1. Fetch latest from Server Cloud
+  const serverItems = await syncFetch<ArchiveItem[]>('/api/sync/archive')
+  if (serverItems && Array.isArray(serverItems) && serverItems.length > 0) {
+    try {
+      const tx = db.transaction('archive', 'readwrite')
+      const store = tx.objectStore('archive')
+      serverItems.forEach((it) => store.put(it))
+    } catch {}
+    return serverItems.sort((a, b) => b.timestamp - a.timestamp)
+  }
+
+  // 2. Fallback to Local IndexedDB
   return new Promise((resolve, reject) => {
     const tx = db.transaction('archive', 'readonly')
     const store = tx.objectStore('archive')
@@ -132,6 +171,11 @@ export async function getArchive(): Promise<ArchiveItem[]> {
 }
 
 export async function deleteArchiveItem(id: string): Promise<void> {
+  syncFetch('/api/sync/archive/delete', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  }).catch(() => {})
+
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction('archive', 'readwrite')
@@ -143,6 +187,11 @@ export async function deleteArchiveItem(id: string): Promise<void> {
 }
 
 export async function toggleArchiveFavorite(id: string): Promise<boolean> {
+  syncFetch('/api/sync/archive/favorite', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  }).catch(() => {})
+
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction('archive', 'readwrite')
@@ -177,6 +226,10 @@ export async function incrementPrintCount(id: string): Promise<number> {
 }
 
 export async function clearArchive(): Promise<void> {
+  syncFetch('/api/sync/archive/clear', {
+    method: 'POST',
+  }).catch(() => {})
+
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction('archive', 'readwrite')
@@ -191,6 +244,20 @@ export async function clearArchive(): Promise<void> {
 
 export async function getCustomProps(): Promise<CustomProp[]> {
   const db = await openDB()
+
+  // 1. Fetch latest from Server Cloud
+  const serverProps = await syncFetch<CustomProp[]>('/api/sync/props')
+  if (serverProps && Array.isArray(serverProps)) {
+    try {
+      const tx = db.transaction('custom_props', 'readwrite')
+      const store = tx.objectStore('custom_props')
+      store.clear()
+      serverProps.forEach((p) => store.put(p))
+    } catch {}
+    return serverProps
+  }
+
+  // 2. Fallback to Local IndexedDB
   return new Promise((resolve, reject) => {
     const tx = db.transaction('custom_props', 'readonly')
     const store = tx.objectStore('custom_props')
@@ -201,8 +268,16 @@ export async function getCustomProps(): Promise<CustomProp[]> {
 }
 
 export async function saveCustomProp(prop: Omit<CustomProp, 'isCustom'>): Promise<CustomProp> {
-  const db = await openDB()
   const completeProp: CustomProp = { ...prop, isCustom: true }
+
+  // 1. Sync to Cloud Server
+  syncFetch('/api/sync/props', {
+    method: 'POST',
+    body: JSON.stringify(completeProp),
+  }).catch(() => {})
+
+  // 2. Persist locally
+  const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction('custom_props', 'readwrite')
     const store = tx.objectStore('custom_props')
@@ -213,6 +288,11 @@ export async function saveCustomProp(prop: Omit<CustomProp, 'isCustom'>): Promis
 }
 
 export async function deleteCustomProp(id: string): Promise<void> {
+  syncFetch('/api/sync/props/delete', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  }).catch(() => {})
+
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction('custom_props', 'readwrite')
@@ -227,6 +307,20 @@ export async function deleteCustomProp(id: string): Promise<void> {
 
 export async function getCustomStickers(): Promise<CustomSticker[]> {
   const db = await openDB()
+
+  // 1. Fetch latest from Server Cloud
+  const serverStickers = await syncFetch<CustomSticker[]>('/api/sync/stickers')
+  if (serverStickers && Array.isArray(serverStickers)) {
+    try {
+      const tx = db.transaction('custom_stickers', 'readwrite')
+      const store = tx.objectStore('custom_stickers')
+      store.clear()
+      serverStickers.forEach((s) => store.put(s))
+    } catch {}
+    return serverStickers
+  }
+
+  // 2. Fallback to Local IndexedDB
   return new Promise((resolve, reject) => {
     const tx = db.transaction('custom_stickers', 'readonly')
     const store = tx.objectStore('custom_stickers')
@@ -236,9 +330,19 @@ export async function getCustomStickers(): Promise<CustomSticker[]> {
   })
 }
 
-export async function saveCustomSticker(sticker: Omit<CustomSticker, 'isCustom'>): Promise<CustomSticker> {
-  const db = await openDB()
+export async function saveCustomSticker(
+  sticker: Omit<CustomSticker, 'isCustom'>
+): Promise<CustomSticker> {
   const completeSticker: CustomSticker = { ...sticker, isCustom: true }
+
+  // 1. Sync to Cloud Server
+  syncFetch('/api/sync/stickers', {
+    method: 'POST',
+    body: JSON.stringify(completeSticker),
+  }).catch(() => {})
+
+  // 2. Persist locally
+  const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction('custom_stickers', 'readwrite')
     const store = tx.objectStore('custom_stickers')
@@ -249,6 +353,11 @@ export async function saveCustomSticker(sticker: Omit<CustomSticker, 'isCustom'>
 }
 
 export async function deleteCustomSticker(id: string): Promise<void> {
+  syncFetch('/api/sync/stickers/delete', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  }).catch(() => {})
+
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction('custom_stickers', 'readwrite')
@@ -263,6 +372,20 @@ export async function deleteCustomSticker(id: string): Promise<void> {
 
 export async function getCustomBackgrounds(): Promise<CustomBackground[]> {
   const db = await openDB()
+
+  // 1. Fetch latest from Server Cloud
+  const serverBgs = await syncFetch<CustomBackground[]>('/api/sync/backgrounds')
+  if (serverBgs && Array.isArray(serverBgs)) {
+    try {
+      const tx = db.transaction('custom_backgrounds', 'readwrite')
+      const store = tx.objectStore('custom_backgrounds')
+      store.clear()
+      serverBgs.forEach((b) => store.put(b))
+    } catch {}
+    return serverBgs
+  }
+
+  // 2. Fallback to Local IndexedDB
   return new Promise((resolve, reject) => {
     const tx = db.transaction('custom_backgrounds', 'readonly')
     const store = tx.objectStore('custom_backgrounds')
@@ -275,8 +398,16 @@ export async function getCustomBackgrounds(): Promise<CustomBackground[]> {
 export async function saveCustomBackground(
   bg: Omit<CustomBackground, 'isCustom' | 'kind'>
 ): Promise<CustomBackground> {
-  const db = await openDB()
   const completeBg: CustomBackground = { ...bg, kind: 'image', isCustom: true }
+
+  // 1. Sync to Cloud Server
+  syncFetch('/api/sync/backgrounds', {
+    method: 'POST',
+    body: JSON.stringify(completeBg),
+  }).catch(() => {})
+
+  // 2. Persist locally
+  const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction('custom_backgrounds', 'readwrite')
     const store = tx.objectStore('custom_backgrounds')
@@ -287,6 +418,11 @@ export async function saveCustomBackground(
 }
 
 export async function deleteCustomBackground(id: string): Promise<void> {
+  syncFetch('/api/sync/backgrounds/delete', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  }).catch(() => {})
+
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction('custom_backgrounds', 'readwrite')
@@ -404,8 +540,25 @@ export const DEFAULT_HIDDEN_ASSETS: HiddenAssets = {
 }
 
 export async function getHiddenAssets(): Promise<HiddenAssets> {
+  const db = await openDB()
+
+  // 1. Fetch latest from Server Cloud
+  const serverHidden = await syncFetch<HiddenAssets>('/api/sync/hidden')
+  if (serverHidden && typeof serverHidden === 'object') {
+    try {
+      const tx = db.transaction('settings', 'readwrite')
+      const store = tx.objectStore('settings')
+      store.put({ key: 'hidden_assets', data: serverHidden })
+    } catch {}
+    return {
+      props: Array.isArray(serverHidden.props) ? serverHidden.props : [],
+      stickers: Array.isArray(serverHidden.stickers) ? serverHidden.stickers : [],
+      backgrounds: Array.isArray(serverHidden.backgrounds) ? serverHidden.backgrounds : [],
+    }
+  }
+
+  // 2. Fallback to Local IndexedDB
   try {
-    const db = await openDB()
     return new Promise((resolve) => {
       const tx = db.transaction('settings', 'readonly')
       const store = tx.objectStore('settings')
@@ -440,6 +593,11 @@ export async function toggleHideAsset(
     ...current,
     [type]: updatedList,
   }
+
+  syncFetch('/api/sync/hidden', {
+    method: 'POST',
+    body: JSON.stringify({ type, id }),
+  }).catch(() => {})
 
   const db = await openDB()
   return new Promise((resolve, reject) => {
