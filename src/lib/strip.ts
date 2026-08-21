@@ -98,7 +98,7 @@ export type FontOption = {
 export const FONT_OPTIONS: FontOption[] = [
   { id: 'pixel', label: 'Pixel', family: '"Press Start 2P", monospace', sample: 'PIXEL', size: 44 },
   { id: 'montserrat', label: 'Montserrat', family: '"Montserrat", sans-serif', sample: 'Montserrat', size: 48 },
-  { id: 'inter', label: 'Inter Bold', family: '"Inter", sans-serif', sample: 'Inter Bold', size: 48 },
+  { id: 'sans_pro', label: 'Sans Serif Pro', family: '"Source Sans 3", "Source Sans Pro", sans-serif', sample: 'Sans Serif Pro', size: 48 },
 ]
 
 import { getCustomBackgrounds, getHiddenAssets, type CustomBackground } from './db'
