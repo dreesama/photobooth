@@ -276,14 +276,21 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
   }, [selected])
 
   const download = async () => {
-    const c = await composeStripAsync({ frames, template, filter, background: bg, frameColor, stickers, logo, customText, textColor })
-    const stripDataUrl = c.toDataURL('image/png')
-    const a = document.createElement('a')
-    a.href = stripDataUrl
-    a.download = `itguild-${Date.now()}.png`
-    a.click()
-
     try {
+      const c = await composeStripAsync({
+        frames,
+        template,
+        filter,
+        background: bg,
+        frameColor,
+        stickers,
+        logo: null,
+        customText,
+        textColor,
+      })
+      const stripDataUrl = c.toDataURL('image/png')
+
+      // Save to local archive
       await saveToArchive({
         id: archiveSessionIdRef.current,
         stripDataUrl,
@@ -294,7 +301,31 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
         stickers,
         customText,
         textColor,
-      })
+      }).catch(() => {})
+
+      // Universal Reliable Blob Download
+      c.toBlob((blob) => {
+        if (!blob) {
+          const a = document.createElement('a')
+          a.href = stripDataUrl
+          a.download = `itguild-${Date.now()}.png`
+          document.body.appendChild(a)
+          a.click()
+          setTimeout(() => document.body.removeChild(a), 500)
+          return
+        }
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.style.display = 'none'
+        a.href = url
+        a.download = `itguild-${Date.now()}.png`
+        document.body.appendChild(a)
+        a.click()
+        setTimeout(() => {
+          document.body.removeChild(a)
+          URL.revokeObjectURL(url)
+        }, 1500)
+      }, 'image/png')
     } catch (e) {
       console.warn('Archive save error:', e)
     }
@@ -309,7 +340,7 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
     setQrError(null)
 
     try {
-      const c = await composeStripAsync({ frames, template, filter, background: bg, frameColor, stickers, logo, customText, textColor })
+      const c = await composeStripAsync({ frames, template, filter, background: bg, frameColor, stickers, logo: null, customText, textColor })
       const stripDataUrl = c.toDataURL('image/png')
 
       // Save latest customized photo strip with all backgrounds, stickers, and filters to Archive
@@ -505,10 +536,11 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
 
         {/* ---- 2. Background ---- */}
         <section>
-          <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
+          <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-2 select-none">
             Background
           </h3>
-          <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-thin">
+          {/* Container with top and bottom padding so scale-105 and rings are never clipped */}
+          <div className="flex gap-3 overflow-x-auto pt-2 pb-3 px-1.5 scrollbar-thin items-center">
             {/* None Option */}
             <button
               onClick={() => handleSelectBg(BACKGROUNDS[0])}
@@ -575,10 +607,10 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
           </div>
         </section>
 
-        {/* ---- 4. Translation & Custom Text ---- */}
+        {/* ---- 4. Custom Text ---- */}
         <section>
           <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
-            Translation & Text
+            Text
           </h3>
           <div className="flex flex-col gap-3 max-w-[560px]">
             {/* Custom Text Input Bar */}
@@ -631,26 +663,6 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
                   />
                 </label>
               </div>
-            </div>
-
-            {/* Language / Logo Quick Presets */}
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              {LOGOS.map((l) => (
-                <button
-                  key={l.id}
-                  onClick={() => {
-                    setLogo(l.id)
-                    setCustomText(l.text)
-                  }}
-                  className={`py-2.5 px-3 rounded-xl font-pixel text-xs tracking-wider transition-all cursor-pointer shadow-md select-none text-center truncate ${
-                    customText === l.text
-                      ? 'bg-[#8198ed] text-white shadow-[0_3px_0_#5b6fbc]'
-                      : 'bg-[#b3c1ff] text-white hover:bg-[#a1b2ff] shadow-[0_3px_0_#8198ed]'
-                  }`}
-                >
-                  {l.text}
-                </button>
-              ))}
             </div>
           </div>
         </section>
