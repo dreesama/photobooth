@@ -117,6 +117,20 @@ export const BUILTIN_BACKGROUNDS: Background[] = [
 
 export let BACKGROUNDS: Background[] = [...BUILTIN_BACKGROUNDS]
 
+const BG_IMG_CACHE = new Map<string, HTMLImageElement>()
+
+export function getBgImage(url?: string): HTMLImageElement | null {
+  if (!url) return null
+  let img = BG_IMG_CACHE.get(url)
+  if (!img) {
+    img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.src = url
+    BG_IMG_CACHE.set(url, img)
+  }
+  return img
+}
+
 export async function reloadBackgrounds(includeHidden = false): Promise<Background[]> {
   try {
     const [customBgs, hiddenAssets] = await Promise.all([
@@ -130,12 +144,18 @@ export async function reloadBackgrounds(includeHidden = false): Promise<Backgrou
       kind: 'image',
       url: c.url,
       isCustom: true,
+      _img: getBgImage(c.url) || undefined,
     }))
 
-    const all = [...BUILTIN_BACKGROUNDS, ...mappedCustom].map((b) => ({
-      ...b,
-      isHidden: hiddenSet.has(b.id),
-    }))
+    const all = [...BUILTIN_BACKGROUNDS, ...mappedCustom].map((b) => {
+      if (b.url) {
+        b._img = getBgImage(b.url) || undefined
+      }
+      return {
+        ...b,
+        isHidden: hiddenSet.has(b.id),
+      }
+    })
 
     BACKGROUNDS = includeHidden ? all : all.filter((b) => b.id === 'none' || !b.isHidden)
   } catch {
@@ -147,11 +167,8 @@ export async function reloadBackgrounds(includeHidden = false): Promise<Backgrou
 export function preloadBackgrounds() {
   reloadBackgrounds().then((bgs) => {
     bgs.forEach((b) => {
-      if (b.url && !b._img) {
-        const img = new Image()
-        img.crossOrigin = 'anonymous'
-        img.src = b.url
-        b._img = img
+      if (b.url) {
+        getBgImage(b.url)
       }
     })
   })
@@ -184,15 +201,16 @@ export function stripSize(t: Template) {
   return { width, height }
 }
 
-export function composeStrip(opts: ComposeOpts): HTMLCanvasElement {
+export function renderStripToCanvas(canvas: HTMLCanvasElement, opts: ComposeOpts): void {
   const { frames, template, filter, background, frameColor, stickers, logo, customText, textColor } = opts
   const { width, height } = stripSize(template)
 
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d', { alpha: false })!
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width
+    canvas.height = height
+  }
 
+  const ctx = canvas.getContext('2d', { alpha: false })!
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
 
@@ -212,8 +230,12 @@ export function composeStrip(opts: ComposeOpts): HTMLCanvasElement {
     }
   }
 
-  if (background.kind === 'image' && background._img && background._img.complete && background._img.naturalWidth) {
-    drawCover(ctx, background._img, 0, 0, width, height)
+  // Draw frame / pattern background
+  if (background.kind === 'image' && background.url) {
+    const bgImg = getBgImage(background.url)
+    if (bgImg && bgImg.complete && bgImg.naturalWidth) {
+      drawCover(ctx, bgImg, 0, 0, width, height)
+    }
   }
 
   // ---- photos (borderless, polaroid whitespace margins, exact 4:3 landscape) ----
@@ -246,7 +268,6 @@ export function composeStrip(opts: ComposeOpts): HTMLCanvasElement {
     const activeColor = textColor || (background.kind === 'image' ? '#ffffff' : '#5b7fcb')
 
     ctx.save()
-    // Soft shadow/outline to ensure text stands out on any dark, bright or patterned background
     ctx.shadowColor = activeColor === '#ffffff' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.8)'
     ctx.shadowBlur = 6
     ctx.shadowOffsetX = 0
@@ -259,7 +280,15 @@ export function composeStrip(opts: ComposeOpts): HTMLCanvasElement {
     ctx.fillText(text.trim(), width / 2, footY + FOOT / 2)
     ctx.restore()
   }
+}
 
+export function composeStrip(opts: ComposeOpts): HTMLCanvasElement {
+  const { template } = opts
+  const { width, height } = stripSize(template)
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  renderStripToCanvas(canvas, opts)
   return canvas
 }
 

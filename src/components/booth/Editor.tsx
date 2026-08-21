@@ -20,6 +20,8 @@ import {
   preloadBackgrounds,
   reloadBackgrounds,
   composeStrip,
+  renderStripToCanvas,
+  getBgImage,
   stripSize,
   type Background,
   type FilterId,
@@ -59,13 +61,31 @@ export default function Editor({ frames, template, onRetake }: Props) {
   const [stickersList, setStickersList] = useState<StickerDef[]>(STICKERS)
 
   const stageRef = useRef<HTMLDivElement | null>(null)
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const drag = useRef<{ uid: string } | null>(null)
+  const animFrameRef = useRef<number | null>(null)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Cached first frame thumbnail for instant filter previews (zero lag)
+  const firstFrameThumb = useMemo(() => {
+    return frames[0] ? frames[0].toDataURL('image/jpeg', 0.75) : ''
+  }, [frames])
+
+  // Raw frames base64 computed once per capture session, never during sticker drag
+  const rawFramesDataUrls = useMemo(() => {
+    return frames.map((f) => f.toDataURL('image/jpeg', 0.85))
+  }, [frames])
 
   useEffect(() => {
     reloadBackgrounds(false).then((loadedBgs) => {
       setBgsList(loadedBgs)
       loadedBgs.forEach((b) => {
-        if (b._img && !b._img.complete) b._img.onload = () => setReady((r) => r + 1)
+        if (b.url) {
+          const img = getBgImage(b.url)
+          if (img && !img.complete) {
+            img.onload = () => setReady((r) => r + 1)
+          }
+        }
       })
     })
 
@@ -83,39 +103,67 @@ export default function Editor({ frames, template, onRetake }: Props) {
         if (saved.stickers && Array.isArray(saved.stickers)) setStickers(saved.stickers)
         if (saved.backgroundId) {
           const matchingBg = BACKGROUNDS.find((b) => b.id === saved.backgroundId)
-          if (matchingBg) setBg(matchingBg)
+          if (matchingBg) handleSelectBg(matchingBg)
         }
       }
     }
     restoreActiveCustomizations()
   }, [])
 
-  // Persist customization edits into active session
+  // Fast direct GPU canvas render on the preview stage
+  useEffect(() => {
+    if (!previewCanvasRef.current || frames.length === 0 || !template) return
+    renderStripToCanvas(previewCanvasRef.current, {
+      frames,
+      template,
+      filter,
+      background: bg,
+      frameColor,
+      stickers: [],
+      logo,
+      customText,
+      textColor,
+    })
+  }, [frames, template, filter, bg, frameColor, logo, customText, textColor, ready])
+
+  // Debounced persistence: saves customization state without blocking UI during dragging
   useEffect(() => {
     if (frames.length > 0 && template) {
-      saveActiveSessionState({
-        step: 'edit',
-        templateId: template.id,
-        rawFrames: frames.map((f) => f.toDataURL('image/png')),
-        filter,
-        backgroundId: bg.id,
-        customText,
-        textColor,
-        stickers,
-        updatedAt: Date.now(),
-      }).catch(() => {})
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = setTimeout(() => {
+        saveActiveSessionState({
+          step: 'edit',
+          templateId: template.id,
+          rawFrames: rawFramesDataUrls,
+          filter,
+          backgroundId: bg.id,
+          customText,
+          textColor,
+          stickers,
+          updatedAt: Date.now(),
+        }).catch(() => {})
+      }, 500)
     }
-  }, [frames, template, filter, bg, customText, textColor, stickers])
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    }
+  }, [frames, template, rawFramesDataUrls, filter, bg.id, customText, textColor, stickers])
 
   const { width, height } = stripSize(template)
 
-  const baseUrl = useMemo(
-    () =>
-      composeStrip({ frames, template, filter, background: bg, frameColor, stickers: [], logo, customText, textColor })
-        .toDataURL('image/png'),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [frames, template, filter, bg, frameColor, logo, customText, textColor, ready]
-  )
+  const handleSelectBg = (selectedBg: Background) => {
+    setBg(selectedBg)
+    if (selectedBg.url) {
+      const img = getBgImage(selectedBg.url)
+      if (img && !img.complete) {
+        img.onload = () => setReady((r) => r + 1)
+      } else {
+        setReady((r) => r + 1)
+      }
+    } else {
+      setReady((r) => r + 1)
+    }
+  }
 
   const toggleSticker = (src: string) => {
     const existing = stickers.find((s) => s.src === src)
@@ -142,7 +190,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
     setSelected(uid)
     drag.current = { uid }
     try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     } catch {}
   }
 
@@ -154,7 +202,11 @@ export default function Editor({ frames, template, onRetake }: Props) {
     if (!r.width || !r.height) return
     const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
     const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
-    setStickers((l) => l.map((s) => (s.uid === currentUid ? { ...s, x, y } : s)))
+
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+    animFrameRef.current = requestAnimationFrame(() => {
+      setStickers((l) => l.map((s) => (s.uid === currentUid ? { ...s, x, y } : s)))
+    })
   }
 
   // Handle Delete/Backspace to delete selected sticker
@@ -234,16 +286,15 @@ export default function Editor({ frames, template, onRetake }: Props) {
       hasSavedRef.current = true
       const c = composeStrip({ frames, template, filter, background: bg, frameColor, stickers, logo, customText, textColor })
       const stripDataUrl = c.toDataURL('image/png')
-      const rawFrames = frames.map((f) => f.toDataURL('image/png'))
       saveToArchive({
         stripDataUrl,
-        rawFrames,
+        rawFrames: rawFramesDataUrls,
         templateId: template.id,
         filter,
         backgroundId: bg.id,
       }).catch(() => {})
     }
-  }, [frames, template, filter, bg, frameColor, logo, customText, textColor, stickers])
+  }, [frames, template, rawFramesDataUrls, filter, bg.id, frameColor, logo, customText, textColor, stickers])
 
   const copyLink = () => {
     navigator.clipboard?.writeText(hostedUrl || window.location.href)
@@ -278,7 +329,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
         <div className="my-auto py-6 flex items-center justify-center">
           <div
             ref={stageRef}
-            className="relative bg-white shadow-[0_12px_36px_rgba(90,110,185,0.25)] rounded-xs overflow-hidden select-none"
+            className="relative bg-white shadow-[0_12px_36px_rgba(90,110,185,0.25)] rounded-xs overflow-hidden select-none touch-none"
             style={{
               width: template.cols === 2 ? 'clamp(200px, 24vw, 300px)' : 'clamp(145px, 16vw, 210px)',
               aspectRatio: `${width} / ${height}`,
@@ -288,9 +339,9 @@ export default function Editor({ frames, template, onRetake }: Props) {
             onPointerCancel={() => (drag.current = null)}
             onPointerDown={() => setSelected(null)}
           >
-            <img
-              src={baseUrl}
-              alt="Your photo strip"
+            {/* Direct GPU Rendered Canvas for 60fps instant previews */}
+            <canvas
+              ref={previewCanvasRef}
               className="w-full h-full block pointer-events-none"
             />
 
@@ -301,7 +352,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
                 onPointerMove={onStageMove}
                 onPointerUp={() => (drag.current = null)}
                 onPointerCancel={() => (drag.current = null)}
-                className={`absolute leading-none touch-none cursor-move ${
+                className={`absolute leading-none touch-none cursor-move select-none ${
                   selected === s.uid ? 'outline outline-2 outline-dashed outline-[#8198ed]' : ''
                 }`}
                 style={{
@@ -370,11 +421,11 @@ export default function Editor({ frames, template, onRetake }: Props) {
                       : 'hover:scale-105 opacity-90 hover:opacity-100'
                   }`}
                 >
-                  {frames[0] && (
+                  {firstFrameThumb && (
                     <img
-                      src={frames[0].toDataURL()}
+                      src={firstFrameThumb}
                       alt=""
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover pointer-events-none"
                       style={{ filter: f.id === 'pixelate' ? 'contrast(1.05)' : f.css }}
                     />
                   )}
@@ -400,7 +451,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
           <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-thin">
             {/* None Option */}
             <button
-              onClick={() => setBg(BACKGROUNDS[0])}
+              onClick={() => handleSelectBg(BACKGROUNDS[0])}
               className={`shrink-0 size-20 sm:size-24 rounded-xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex items-center justify-center transition-all cursor-pointer ${
                 bg.id === 'none' ? 'ring-3 ring-[#ff80a0] shadow-md scale-105' : 'hover:scale-105'
               }`}
@@ -412,7 +463,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
             {bgsList.filter((b) => b.kind === 'image' && b.url).map((b) => (
               <button
                 key={b.id}
-                onClick={() => setBg(b)}
+                onClick={() => handleSelectBg(b)}
                 className={`shrink-0 size-20 sm:size-24 rounded-xl overflow-hidden border-2 bg-white transition-all cursor-pointer ${
                   bg.id === b.id
                     ? 'border-[#8198ed] ring-3 ring-[#8198ed]/50 shadow-md scale-105'
