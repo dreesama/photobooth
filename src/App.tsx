@@ -26,14 +26,14 @@ export default function App() {
     )
   })()
 
-  // Initialize view based on URL parameters / hash
+  // Initialize view based on URL parameters / authentication
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
     const hash = window.location.hash.toLowerCase()
     const path = window.location.pathname.toLowerCase()
 
-    const hasSecretAdminParam =
+    const wantsAdmin =
       params.has('admin') ||
       params.get('portal') === 'itguild' ||
       params.get('operator') === '1' ||
@@ -42,19 +42,14 @@ export default function App() {
       path === '/admin' ||
       path === '/itguild-admin'
 
-    if (hasSecretAdminParam) {
-      if (isAdminAuthenticated()) {
-        setView('admin')
-      } else {
-        setPendingAdminView('admin')
-        setShowPasscodeModal(true)
-      }
-    } else if (!isLocalHost) {
-      setView('public')
+    if (isAdminAuthenticated()) {
+      setView(wantsAdmin ? 'admin' : 'desktop')
     } else {
-      setView('desktop')
+      // Require master passcode on public deployment
+      setPendingAdminView(wantsAdmin ? 'admin' : 'desktop')
+      setShowPasscodeModal(true)
     }
-  }, [isLocalHost])
+  }, [])
 
   // Global keyboard shortcut to open Admin Studio (Ctrl + Shift + A or Alt + A)
   useEffect(() => {
@@ -98,24 +93,19 @@ export default function App() {
       {/* Main Views */}
       {view === 'admin' && (
         <AdminDashboard
-          onExit={() => setView(isLocalHost ? 'desktop' : 'public')}
+          onExit={() => setView('desktop')}
           onStartBooth={() => setView('booth')}
         />
       )}
       {view === 'booth' && (
         <Booth
-          onExit={() => setView(isLocalHost ? 'desktop' : 'public')}
+          onExit={() => setView('desktop')}
           onOpenAdmin={handleOpenAdmin}
         />
       )}
       {view === 'desktop' && (
         <Desktop
           onStart={() => setView('booth')}
-          onOpenAdmin={handleOpenAdmin}
-        />
-      )}
-      {view === 'public' && (
-        <PublicPortal
           onOpenAdmin={handleOpenAdmin}
         />
       )}
