@@ -689,7 +689,7 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
             {/* Font Style Picker */}
             <div className="flex flex-col gap-1.5 pt-1">
               <span className="font-pixel text-[9px] text-[#5b7fcb] tracking-wider">Font Style:</span>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {FONT_OPTIONS.map((f) => (
                   <button
                     key={f.id}
