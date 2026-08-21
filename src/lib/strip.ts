@@ -86,6 +86,24 @@ export const TEXT_COLORS = [
   { id: 'gold', label: 'Warm Gold', color: '#e09f3e' },
 ]
 
+/* ---------------- Font Options ---------------- */
+export type FontOption = {
+  id: string
+  label: string
+  family: string
+  sample: string
+  size: number
+}
+
+export const FONT_OPTIONS: FontOption[] = [
+  { id: 'pixel', label: '8-Bit Pixel', family: '"Press Start 2P", monospace', sample: 'PIXEL', size: 44 },
+  { id: 'digital', label: 'Retro CRT', family: '"VT323", monospace', sample: 'Retro', size: 68 },
+  { id: 'handwritten', label: 'Handwritten', family: '"Caveat", cursive', sample: 'Lovely', size: 64 },
+  { id: 'bubble', label: 'Cute Bubble', family: '"Fredoka", sans-serif', sample: 'Bubble', size: 52 },
+  { id: 'bold', label: 'Modern Bold', family: '"Montserrat", sans-serif', sample: 'Bold', size: 48 },
+  { id: 'typewriter', label: 'Typewriter', family: '"Special Elite", monospace', sample: 'Type', size: 46 },
+]
+
 import { getCustomBackgrounds, getHiddenAssets, type CustomBackground } from './db'
 
 /* ---------------- Backgrounds (frame) ---------------- */
@@ -185,6 +203,7 @@ export type ComposeOpts = {
   logo?: LogoLang | null
   customText?: string
   textColor?: string
+  fontStyle?: string
 }
 
 // 300 DPI Ultra Sharp Super-Sampled Dimensions
@@ -202,7 +221,7 @@ export function stripSize(t: Template) {
 }
 
 export function renderStripToCanvas(canvas: HTMLCanvasElement, opts: ComposeOpts): void {
-  const { frames, template, filter, background, frameColor, stickers, logo, customText, textColor } = opts
+  const { frames, template, filter, background, frameColor, stickers, logo, customText, textColor, fontStyle } = opts
   const { width, height } = stripSize(template)
 
   if (canvas.width !== width || canvas.height !== height) {
@@ -276,7 +295,8 @@ export function renderStripToCanvas(canvas: HTMLCanvasElement, opts: ComposeOpts
     ctx.fillStyle = activeColor
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.font = `bold 44px "${logo === 'en' || !logo ? 'Press Start 2P' : 'Noto Sans JP'}", monospace`
+    const fontDef = FONT_OPTIONS.find((f) => f.id === fontStyle) || FONT_OPTIONS[0]
+    ctx.font = `bold ${fontDef.size}px ${fontDef.family}`
     ctx.fillText(text.trim(), width / 2, footY + FOOT / 2)
     ctx.restore()
   }

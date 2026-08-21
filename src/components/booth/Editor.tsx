@@ -24,10 +24,12 @@ import {
   renderStripToCanvas,
   getBgImage,
   stripSize,
+  FONT_OPTIONS,
   type Background,
   type FilterId,
   type LogoLang,
   type Template,
+  type FontOption,
 } from '../../lib/strip'
 import { STICKERS, loadStickers, type PlacedSticker, type StickerDef } from '../../lib/stickers'
 import { saveToArchive, saveActiveSessionState, getActiveSessionState } from '../../lib/db'
@@ -47,6 +49,7 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
   const [logo, setLogo] = useState<LogoLang>('en')
   const [customText, setCustomText] = useState<string>('IT GUILD')
   const [textColor, setTextColor] = useState<string>('#5b7fcb')
+  const [fontStyle, setFontStyle] = useState<string>('pixel')
   const [stickers, setStickers] = useState<PlacedSticker[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [ready, setReady] = useState(0)
@@ -131,8 +134,9 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
       logo,
       customText,
       textColor,
+      fontStyle,
     })
-  }, [frames, template, filter, bg, frameColor, logo, customText, textColor, ready])
+  }, [frames, template, filter, bg, frameColor, logo, customText, textColor, fontStyle, ready])
 
   // Debounced persistence: saves customization state without blocking UI during dragging
   useEffect(() => {
@@ -174,6 +178,7 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
           logo,
           customText,
           textColor,
+          fontStyle,
         })
         const stripDataUrl = c.toDataURL('image/png')
         await saveToArchive({
@@ -195,7 +200,7 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
     return () => {
       if (archiveTimerRef.current) clearTimeout(archiveTimerRef.current)
     }
-  }, [frames, template, rawFramesDataUrls, filter, bg, frameColor, stickers, logo, customText, textColor, ready])
+  }, [frames, template, rawFramesDataUrls, filter, bg, frameColor, stickers, logo, customText, textColor, fontStyle, ready])
 
   const { width, height } = stripSize(template)
 
@@ -287,6 +292,7 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
         logo: null,
         customText,
         textColor,
+        fontStyle,
       })
       const stripDataUrl = c.toDataURL('image/png')
 
@@ -340,7 +346,7 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
     setQrError(null)
 
     try {
-      const c = await composeStripAsync({ frames, template, filter, background: bg, frameColor, stickers, logo: null, customText, textColor })
+      const c = await composeStripAsync({ frames, template, filter, background: bg, frameColor, stickers, logo: null, customText, textColor, fontStyle })
       const stripDataUrl = c.toDataURL('image/png')
 
       // Save latest customized photo strip with all backgrounds, stickers, and filters to Archive
@@ -632,8 +638,41 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
               </button>
             </div>
 
+            {/* Font Style Picker */}
+            <div className="flex flex-col gap-1.5 pt-1">
+              <span className="font-pixel text-[9px] text-[#5b7fcb] tracking-wider">Font Style:</span>
+              <div className="grid grid-cols-3 gap-2">
+                {FONT_OPTIONS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setFontStyle(f.id)}
+                    className={`py-2 px-2 rounded-xl border text-center transition-all cursor-pointer shadow-xs truncate flex flex-col items-center justify-center gap-0.5 ${
+                      fontStyle === f.id
+                        ? 'bg-[#8198ed] text-white border-[#5b6fbc] ring-2 ring-[#8198ed]/50 shadow-md scale-[1.02]'
+                        : 'bg-white text-[#334155] border-[#cdd6f0] hover:border-[#8198ed] hover:bg-[#f8faff]'
+                    }`}
+                  >
+                    <span
+                      className="text-xs sm:text-sm leading-tight"
+                      style={{ fontFamily: f.family.replace(/"/g, '') }}
+                    >
+                      {f.sample}
+                    </span>
+                    <span
+                      className={`text-[8px] font-pixel truncate opacity-80 ${
+                        fontStyle === f.id ? 'text-white' : 'text-[#8792c4]'
+                      }`}
+                    >
+                      {f.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Text Color Swatches */}
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 pt-1">
               <span className="font-pixel text-[9px] text-[#5b7fcb] tracking-wider">Text Color:</span>
               <div className="flex items-center gap-2 flex-wrap">
                 {TEXT_COLORS.map((tc) => (
