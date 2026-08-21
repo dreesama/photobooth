@@ -46,6 +46,7 @@ export type EventSettings = {
   autoSaveToArchive: boolean
   defaultTimer: number
   printLayout: 'single' | 'double_4x6' | 'grid'
+  publicServerUrl?: string
 }
 
 export const DEFAULT_SETTINGS: EventSettings = {
@@ -55,6 +56,7 @@ export const DEFAULT_SETTINGS: EventSettings = {
   autoSaveToArchive: true,
   defaultTimer: 3,
   printLayout: 'double_4x6',
+  publicServerUrl: 'https://esportcup.up.railway.app',
 }
 
 const DB_NAME = 'omoide_booth_db'

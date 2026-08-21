@@ -1,3 +1,5 @@
+import { getSettings } from './db'
+
 /**
  * Self-Hosted Photo Uploader for Photobooth Softcopies
  * Uploads high-res photo strips directly to the self-hosted server backend (/api/upload).
@@ -5,7 +7,14 @@
  */
 
 export async function uploadPhotoStrip(dataUrl: string): Promise<string> {
-  const res = await fetch('/api/upload', {
+  const settings = await getSettings().catch(() => null)
+  const configuredDomain = settings?.publicServerUrl?.trim() || (import.meta as any).env?.VITE_PUBLIC_UPLOAD_URL || ''
+
+  const endpoint = configuredDomain
+    ? `${configuredDomain.replace(/\/$/, '')}/api/upload`
+    : '/api/upload'
+
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ dataUrl }),

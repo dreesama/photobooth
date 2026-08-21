@@ -207,6 +207,30 @@ export default function SettingsTab({ onSettingsChange }: { onSettingsChange?: (
           </div>
         </div>
 
+        {/* Public Softcopy & QR Cloud Delivery */}
+        <div className="bg-white p-4 rounded-xl bevel-in space-y-4">
+          <h2 className="font-pixel text-xs sm:text-sm text-[#5b7fcb] pb-2 border-b border-slate-100 flex items-center justify-between">
+            <span>Public Cloud QR Server URL</span>
+            <span className="text-[9px] text-[#8198ed] font-mono font-normal">Railway Hosted</span>
+          </h2>
+
+          <div>
+            <label className="block font-pixel text-[10px] text-[#5b7fcb] mb-1">
+              Public QR Endpoint / Domain
+            </label>
+            <input
+              type="text"
+              value={settings.publicServerUrl || ''}
+              onChange={(e) => setSettings({ ...settings, publicServerUrl: e.target.value })}
+              placeholder="https://esportcup.up.railway.app"
+              className="w-full bg-[#f8fafc] bevel-in px-3 py-2 text-xs font-mono outline-none rounded"
+            />
+            <p className="font-sans text-[10px] text-slate-400 mt-1">
+              When taking photos on this local computer, QR codes point directly to this domain (e.g. <code>https://esportcup.up.railway.app/photo/xxx</code>) so guests only get the download page and cannot access your local photobooth machine or admin controls.
+            </p>
+          </div>
+        </div>
+
         {/* Save button */}
         <div className="flex items-center justify-between">
           <span className="font-pixel text-xs text-green-600 font-bold">{savedMessage}</span>

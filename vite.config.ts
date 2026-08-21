@@ -396,6 +396,16 @@ function cloudUploadPlugin(): Plugin {
   function setupMiddlewares(middlewares: any) {
     // 1. Upload & Cache Image
     middlewares.use('/api/upload', async (req: any, res: any, next: any) => {
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 204
+        res.end()
+        return
+      }
+
       if (req.method !== 'POST') return next()
 
       let body = ''
@@ -427,6 +437,7 @@ function cloudUploadPlugin(): Plugin {
 
     // 2. Direct Raw Image Stream
     middlewares.use('/api/raw/', (req: any, res: any, next: any) => {
+      res.setHeader('Access-Control-Allow-Origin', '*')
       const id = req.url?.replace('/', '').split('?')[0] || ''
       const buffer = photoCache.get(id)
       if (buffer) {
@@ -441,6 +452,7 @@ function cloudUploadPlugin(): Plugin {
 
     // 3. Direct Image Download Attachment
     middlewares.use('/api/download/', (req: any, res: any, next: any) => {
+      res.setHeader('Access-Control-Allow-Origin', '*')
       const id = req.url?.replace('/', '').split('?')[0] || ''
       const buffer = photoCache.get(id)
       if (buffer) {
