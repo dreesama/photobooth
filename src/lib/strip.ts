@@ -292,6 +292,41 @@ export function composeStrip(opts: ComposeOpts): HTMLCanvasElement {
   return canvas
 }
 
+export async function composeStripAsync(opts: ComposeOpts): Promise<HTMLCanvasElement> {
+  const { background, stickers } = opts
+  const promises: Promise<any>[] = []
+
+  if (background.kind === 'image' && background.url) {
+    const bgImg = getBgImage(background.url)
+    if (bgImg && !bgImg.complete) {
+      promises.push(
+        new Promise((resolve) => {
+          bgImg.onload = resolve
+          bgImg.onerror = resolve
+        })
+      )
+    }
+  }
+
+  stickers.forEach((s) => {
+    const im = stickerImage(s.src)
+    if (im && !im.complete) {
+      promises.push(
+        new Promise((resolve) => {
+          im.onload = resolve
+          im.onerror = resolve
+        })
+      )
+    }
+  })
+
+  if (promises.length > 0) {
+    await Promise.all(promises)
+  }
+
+  return composeStrip(opts)
+}
+
 export function composePrintSheet(stripCanvas: HTMLCanvasElement, double2x6 = true): HTMLCanvasElement {
   const printCanvas = document.createElement('canvas')
   printCanvas.width = 1200

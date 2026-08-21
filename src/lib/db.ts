@@ -8,6 +8,9 @@ export type ArchiveItem = {
   templateId: string
   filter: string
   backgroundId: string
+  stickers?: any[]
+  customText?: string
+  textColor?: string
   eventName?: string
   favorite?: boolean
   printedCount?: number

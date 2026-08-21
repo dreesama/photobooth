@@ -20,6 +20,7 @@ import {
   preloadBackgrounds,
   reloadBackgrounds,
   composeStrip,
+  composeStripAsync,
   renderStripToCanvas,
   getBgImage,
   stripSize,
@@ -49,6 +50,11 @@ export default function Editor({ frames, template, onRetake }: Props) {
   const [selected, setSelected] = useState<string | null>(null)
   const [ready, setReady] = useState(0)
 
+  // Unique session ID for persistent archive entry
+  const archiveSessionIdRef = useRef<string>(
+    `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+  )
+
   // QR Modal State
   const [showShare, setShowShare] = useState(false)
   const [qrLoading, setQrLoading] = useState(false)
@@ -65,6 +71,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
   const drag = useRef<{ uid: string } | null>(null)
   const animFrameRef = useRef<number | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const archiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Cached first frame thumbnail for instant filter previews (zero lag)
   const firstFrameThumb = useMemo(() => {
@@ -149,6 +156,46 @@ export default function Editor({ frames, template, onRetake }: Props) {
     }
   }, [frames, template, rawFramesDataUrls, filter, bg.id, customText, textColor, stickers])
 
+  // Continuous background auto-sync to Archive: ensures latest background, filter, text, and stickers are saved
+  useEffect(() => {
+    if (frames.length === 0 || !template) return
+
+    if (archiveTimerRef.current) clearTimeout(archiveTimerRef.current)
+    archiveTimerRef.current = setTimeout(async () => {
+      try {
+        const c = await composeStripAsync({
+          frames,
+          template,
+          filter,
+          background: bg,
+          frameColor,
+          stickers,
+          logo,
+          customText,
+          textColor,
+        })
+        const stripDataUrl = c.toDataURL('image/png')
+        await saveToArchive({
+          id: archiveSessionIdRef.current,
+          stripDataUrl,
+          rawFrames: rawFramesDataUrls,
+          templateId: template.id,
+          filter,
+          backgroundId: bg.id,
+          stickers,
+          customText,
+          textColor,
+        })
+      } catch (e) {
+        console.warn('Archive auto-sync error:', e)
+      }
+    }, 600)
+
+    return () => {
+      if (archiveTimerRef.current) clearTimeout(archiveTimerRef.current)
+    }
+  }, [frames, template, rawFramesDataUrls, filter, bg, frameColor, stickers, logo, customText, textColor, ready])
+
   const { width, height } = stripSize(template)
 
   const handleSelectBg = (selectedBg: Background) => {
@@ -228,7 +275,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
   }, [selected])
 
   const download = async () => {
-    const c = composeStrip({ frames, template, filter, background: bg, frameColor, stickers, logo, customText, textColor })
+    const c = await composeStripAsync({ frames, template, filter, background: bg, frameColor, stickers, logo, customText, textColor })
     const stripDataUrl = c.toDataURL('image/png')
     const a = document.createElement('a')
     a.href = stripDataUrl
@@ -236,13 +283,16 @@ export default function Editor({ frames, template, onRetake }: Props) {
     a.click()
 
     try {
-      const rawFrames = frames.map((f) => f.toDataURL('image/png'))
       await saveToArchive({
+        id: archiveSessionIdRef.current,
         stripDataUrl,
-        rawFrames,
+        rawFrames: rawFramesDataUrls,
         templateId: template.id,
         filter,
         backgroundId: bg.id,
+        stickers,
+        customText,
+        textColor,
       })
     } catch (e) {
       console.warn('Archive save error:', e)
@@ -258,8 +308,21 @@ export default function Editor({ frames, template, onRetake }: Props) {
     setQrError(null)
 
     try {
-      const c = composeStrip({ frames, template, filter, background: bg, frameColor, stickers, logo, customText, textColor })
+      const c = await composeStripAsync({ frames, template, filter, background: bg, frameColor, stickers, logo, customText, textColor })
       const stripDataUrl = c.toDataURL('image/png')
+
+      // Save latest customized photo strip with all backgrounds, stickers, and filters to Archive
+      await saveToArchive({
+        id: archiveSessionIdRef.current,
+        stripDataUrl,
+        rawFrames: rawFramesDataUrls,
+        templateId: template.id,
+        filter,
+        backgroundId: bg.id,
+        stickers,
+        customText,
+        textColor,
+      }).catch(() => {})
 
       const directUrl = await uploadPhotoStrip(stripDataUrl)
       setHostedUrl(directUrl)
@@ -278,23 +341,6 @@ export default function Editor({ frames, template, onRetake }: Props) {
       setQrLoading(false)
     }
   }
-
-  // Auto-save on initial mount
-  const hasSavedRef = useRef(false)
-  useEffect(() => {
-    if (frames.length > 0 && !hasSavedRef.current) {
-      hasSavedRef.current = true
-      const c = composeStrip({ frames, template, filter, background: bg, frameColor, stickers, logo, customText, textColor })
-      const stripDataUrl = c.toDataURL('image/png')
-      saveToArchive({
-        stripDataUrl,
-        rawFrames: rawFramesDataUrls,
-        templateId: template.id,
-        filter,
-        backgroundId: bg.id,
-      }).catch(() => {})
-    }
-  }, [frames, template, rawFramesDataUrls, filter, bg.id, frameColor, logo, customText, textColor, stickers])
 
   const copyLink = () => {
     navigator.clipboard?.writeText(hostedUrl || window.location.href)
