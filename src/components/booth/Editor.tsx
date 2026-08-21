@@ -37,9 +37,10 @@ type Props = {
   frames: HTMLCanvasElement[]
   template: Template
   onRetake: () => void
+  onDone: () => void
 }
 
-export default function Editor({ frames, template, onRetake }: Props) {
+export default function Editor({ frames, template, onRetake, onDone }: Props) {
   const [filter, setFilter] = useState<FilterId>('original')
   const [bg, setBg] = useState<Background>(BACKGROUNDS[0])
   const [frameColor] = useState('#ffffff')
@@ -349,13 +350,13 @@ export default function Editor({ frames, template, onRetake }: Props) {
   }
 
   return (
-    <div className="w-full min-h-screen grid grid-cols-1 lg:grid-cols-[40%_60%] xl:grid-cols-[42%_58%] items-stretch">
-      {/* ================= LEFT HALF: Preview Title + Photo Strip + Download/QR ================= */}
-      <div className="flex flex-col justify-between p-6 sm:p-10 lg:p-12 min-h-screen relative">
+    <div className="w-full h-screen max-h-screen overflow-hidden grid grid-cols-1 lg:grid-cols-[45%_55%] xl:grid-cols-[46%_54%] select-none">
+      {/* ================= LEFT HALF: Preview Title + Photo Strip + Download/QR/Done ================= */}
+      <div className="flex flex-col justify-between p-4 sm:p-5 lg:p-6 h-full max-h-screen overflow-hidden min-h-0 relative">
         {/* Top Header: Preview */}
-        <div className="w-full flex items-center justify-between">
+        <div className="w-full flex items-center justify-between shrink-0">
           <h2
-            className="font-pixel text-[#5b7fcb] text-3xl sm:text-4xl tracking-wider select-none"
+            className="font-pixel text-[#5b7fcb] text-2xl sm:text-3xl tracking-wider select-none"
             style={{
               textShadow: '0 3px 0 #9cb6ec, 0 6px 14px rgba(91,127,203,0.3)',
             }}
@@ -364,20 +365,21 @@ export default function Editor({ frames, template, onRetake }: Props) {
           </h2>
           <button
             onClick={onRetake}
-            className="font-pixel text-[10px] sm:text-xs text-[#8792c4] hover:text-[#5b7fcb] underline select-none cursor-pointer flex items-center gap-1"
+            className="font-pixel text-[10px] sm:text-xs text-[#8792c4] hover:text-[#5b7fcb] underline select-none cursor-pointer flex items-center gap-1.5 bg-white/80 hover:bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-xs transition-all"
           >
             <RotateCcw className="w-3 h-3" />
             <span>Retake</span>
           </button>
         </div>
 
-        {/* Center: Photo Strip Canvas */}
-        <div className="my-auto py-6 flex items-center justify-center">
+        {/* Center: Large High-Visibility Photo Strip Canvas */}
+        <div className="my-auto flex-1 min-h-0 flex items-center justify-center py-2 sm:py-3 overflow-hidden">
           <div
             ref={stageRef}
-            className="relative bg-white shadow-[0_12px_36px_rgba(90,110,185,0.25)] rounded-xs overflow-hidden select-none touch-none"
+            className="relative bg-white shadow-[0_16px_40px_rgba(90,110,185,0.28)] rounded-xs select-none touch-none"
             style={{
-              width: template.cols === 2 ? 'clamp(200px, 24vw, 300px)' : 'clamp(145px, 16vw, 210px)',
+              height: '100%',
+              maxHeight: 'min(72vh, 620px)',
               aspectRatio: `${width} / ${height}`,
             }}
             onPointerMove={onStageMove}
@@ -388,7 +390,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
             {/* Direct GPU Rendered Canvas for 60fps instant previews */}
             <canvas
               ref={previewCanvasRef}
-              className="w-full h-full block pointer-events-none"
+              className="w-full h-full block pointer-events-none rounded-xs"
             />
 
             {stickers.map((s) => (
@@ -405,7 +407,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
                   left: `${s.x * 100}%`,
                   top: `${s.y * 100}%`,
                   transform: `translate(-50%,-50%) rotate(${s.rotation}deg)`,
-                  width: `${s.scale * 36}px`,
+                  width: `${s.scale * 42}px`,
                 }}
               >
                 <img
@@ -418,42 +420,54 @@ export default function Editor({ frames, template, onRetake }: Props) {
           </div>
         </div>
 
-        {/* Bottom Bar: Download & QR */}
-        <div className="flex items-center gap-3 w-full max-w-[340px]">
+        {/* Bottom Bar: Download, QR, Done (Always visible) */}
+        <div className="flex items-center gap-2.5 sm:gap-3 w-full max-w-[460px] mx-auto shrink-0 pt-2 pb-1">
           {/* Download Button with outer white container card */}
-          <div className="flex-1 p-1 bg-white rounded-xl shadow-[0_4px_12px_rgba(100,120,190,0.18)]">
+          <div className="flex-1 p-0.5 bg-white rounded-xl shadow-[0_4px_12px_rgba(100,120,190,0.18)]">
             <button
               type="button"
               onClick={download}
-              className="w-full bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#5b6fbc] transition-all cursor-pointer select-none text-center flex items-center justify-center gap-2"
+              className="w-full bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white py-2.5 sm:py-3 rounded-lg font-pixel text-[10px] sm:text-xs tracking-wider shadow-[2px_2px_0px_#5b6fbc] transition-all cursor-pointer select-none text-center flex items-center justify-center gap-1.5"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>Download</span>
             </button>
           </div>
 
           {/* QR Button with outer white container card */}
-          <div className="p-1 bg-white rounded-xl shadow-[0_4px_12px_rgba(100,120,190,0.18)]">
+          <div className="flex-1 p-0.5 bg-white rounded-xl shadow-[0_4px_12px_rgba(100,120,190,0.18)]">
             <button
               type="button"
               onClick={handleOpenQR}
-              className="bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white px-5 py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#5b6fbc] transition-all cursor-pointer select-none flex items-center gap-1.5"
+              className="w-full bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white py-2.5 sm:py-3 rounded-lg font-pixel text-[10px] sm:text-xs tracking-wider shadow-[2px_2px_0px_#5b6fbc] transition-all cursor-pointer select-none flex items-center justify-center gap-1.5"
             >
-              <QrCode className="w-4 h-4" />
+              <QrCode className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>QR</span>
+            </button>
+          </div>
+
+          {/* Done Button: returns to layout picker for next guest */}
+          <div className="flex-1 p-0.5 bg-white rounded-xl shadow-[0_4px_12px_rgba(100,120,190,0.18)]">
+            <button
+              type="button"
+              onClick={onDone}
+              className="w-full bg-[#52b788] hover:bg-[#40916c] active:translate-y-0.5 text-white py-2.5 sm:py-3 rounded-lg font-pixel text-[10px] sm:text-xs tracking-wider shadow-[2px_2px_0px_#2d6a4f] transition-all cursor-pointer select-none flex items-center justify-center gap-1.5"
+            >
+              <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>Done</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* ================= RIGHT HALF: Full Height Customization Panel ================= */}
-      <div className="bg-[#efefff] min-h-screen px-6 sm:px-10 lg:px-14 py-8 sm:py-10 overflow-y-auto space-y-8 shadow-2xl flex flex-col justify-start">
+      <div className="bg-[#efefff] h-full max-h-screen px-5 sm:px-8 lg:px-10 py-5 sm:py-6 overflow-y-auto space-y-6 shadow-2xl flex flex-col justify-start scrollbar-thin">
         {/* ---- 1. Filters ---- */}
         <section>
-          <h3 className="font-pixel text-[#5b7fcb] text-xl sm:text-2xl tracking-wider mb-4 select-none">
+          <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
             Filters
           </h3>
-          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2.5 sm:gap-3">
+          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-2.5">
             {FILTERS.map((f) => (
               <button
                 key={f.id}
@@ -481,7 +495,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
                     </span>
                   )}
                 </div>
-                <p className="font-pixel text-[6px] sm:text-[7px] text-[#5b7fcb] text-center mt-1.5 truncate w-full group-hover:text-[#4162b8]">
+                <p className="font-pixel text-[6px] sm:text-[7px] text-[#5b7fcb] text-center mt-1 truncate w-full group-hover:text-[#4162b8]">
                   {f.label}
                 </p>
               </button>
@@ -491,18 +505,18 @@ export default function Editor({ frames, template, onRetake }: Props) {
 
         {/* ---- 2. Background ---- */}
         <section>
-          <h3 className="font-pixel text-[#5b7fcb] text-xl sm:text-2xl tracking-wider mb-4 select-none">
+          <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
             Background
           </h3>
-          <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-thin">
+          <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-thin">
             {/* None Option */}
             <button
               onClick={() => handleSelectBg(BACKGROUNDS[0])}
-              className={`shrink-0 size-20 sm:size-24 rounded-xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex items-center justify-center transition-all cursor-pointer ${
+              className={`shrink-0 size-16 sm:size-20 rounded-xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex items-center justify-center transition-all cursor-pointer ${
                 bg.id === 'none' ? 'ring-3 ring-[#ff80a0] shadow-md scale-105' : 'hover:scale-105'
               }`}
             >
-              <Ban className="w-6 h-6 text-rose-400" />
+              <Ban className="w-5 h-5 text-rose-400" />
             </button>
 
             {/* Pattern/Frame image backgrounds */}
@@ -510,7 +524,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
               <button
                 key={b.id}
                 onClick={() => handleSelectBg(b)}
-                className={`shrink-0 size-20 sm:size-24 rounded-xl overflow-hidden border-2 bg-white transition-all cursor-pointer ${
+                className={`shrink-0 size-16 sm:size-20 rounded-xl overflow-hidden border-2 bg-white transition-all cursor-pointer ${
                   bg.id === b.id
                     ? 'border-[#8198ed] ring-3 ring-[#8198ed]/50 shadow-md scale-105'
                     : 'border-[#cdd6f0] hover:scale-105'
@@ -524,17 +538,17 @@ export default function Editor({ frames, template, onRetake }: Props) {
 
         {/* ---- 3. Stickers ---- */}
         <section>
-          <h3 className="font-pixel text-[#5b7fcb] text-xl sm:text-2xl tracking-wider mb-4 select-none">
+          <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
             Stickers
           </h3>
-          <div className="grid grid-cols-5 gap-3 sm:gap-4 max-w-[620px]">
+          <div className="grid grid-cols-5 sm:grid-cols-6 gap-2.5 sm:gap-3 max-w-[620px]">
             {/* Clear All Stickers Button */}
             <button
               onClick={() => setStickers([])}
-              className="size-20 sm:size-24 rounded-xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex items-center justify-center transition-all cursor-pointer hover:scale-105"
+              className="size-16 sm:size-20 rounded-xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex items-center justify-center transition-all cursor-pointer hover:scale-105"
               title="Clear all stickers"
             >
-              <Trash2 className="w-6 h-6 text-rose-400" />
+              <Trash2 className="w-5 h-5 text-rose-400" />
             </button>
 
             {/* Stickers List */}
@@ -544,7 +558,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
                 <button
                   key={s.id}
                   onClick={() => toggleSticker(s.src)}
-                  className={`size-20 sm:size-24 rounded-xl bg-[#e8eeff] hover:bg-white border-2 flex items-center justify-center p-3 transition-all cursor-pointer ${
+                  className={`size-16 sm:size-20 rounded-xl bg-[#e8eeff] hover:bg-white border-2 flex items-center justify-center p-2.5 transition-all cursor-pointer ${
                     isPlaced
                       ? 'border-[#8198ed] ring-3 ring-[#8198ed]/50 shadow-md scale-105'
                       : 'border-transparent hover:border-[#8198ed] hover:scale-105'
@@ -563,10 +577,10 @@ export default function Editor({ frames, template, onRetake }: Props) {
 
         {/* ---- 4. Translation & Custom Text ---- */}
         <section>
-          <h3 className="font-pixel text-[#5b7fcb] text-xl sm:text-2xl tracking-wider mb-4 select-none">
+          <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
             Translation & Text
           </h3>
-          <div className="flex flex-col gap-3.5 max-w-[560px]">
+          <div className="flex flex-col gap-3 max-w-[560px]">
             {/* Custom Text Input Bar */}
             <div className="flex gap-2 w-full">
               <input
@@ -574,12 +588,12 @@ export default function Editor({ frames, template, onRetake }: Props) {
                 placeholder="Write custom text (or leave blank)..."
                 value={customText}
                 onChange={(e) => setCustomText(e.target.value)}
-                className="flex-1 bg-white border border-[#cdd6f0] focus:border-[#8198ed] focus:ring-2 focus:ring-[#8198ed]/30 px-3.5 py-2.5 rounded-xl font-mono text-xs text-[#334155] outline-none shadow-xs"
+                className="flex-1 bg-white border border-[#cdd6f0] focus:border-[#8198ed] focus:ring-2 focus:ring-[#8198ed]/30 px-3 py-2 rounded-xl font-mono text-xs text-[#334155] outline-none shadow-xs"
               />
               <button
                 type="button"
                 onClick={() => setCustomText('')}
-                className="btn95 !px-3 !py-2 text-[10px] font-bold text-[#ff5c8a] shrink-0"
+                className="btn95 !px-3 !py-1.5 text-[10px] font-bold text-[#ff5c8a] shrink-0"
                 title="Clear text (Blank Polaroid)"
               >
                 ✕ Blank
@@ -595,7 +609,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
                     key={tc.id}
                     onClick={() => setTextColor(tc.color)}
                     title={tc.label}
-                    className={`size-7 sm:size-8 rounded-full border-2 transition-transform cursor-pointer shadow-xs ${
+                    className={`size-7 rounded-full border-2 transition-transform cursor-pointer shadow-xs ${
                       textColor.toLowerCase() === tc.color.toLowerCase()
                         ? 'border-[#5b7fcb] scale-110 ring-2 ring-[#8198ed]'
                         : 'border-slate-300 hover:scale-105'
@@ -606,9 +620,9 @@ export default function Editor({ frames, template, onRetake }: Props) {
                 {/* Custom Color Input */}
                 <label
                   title="Custom Color"
-                  className="size-7 sm:size-8 rounded-full border-2 border-dashed border-[#8198ed] grid place-items-center cursor-pointer hover:scale-105 bg-white shadow-xs text-xs overflow-hidden text-[#8198ed]"
+                  className="size-7 rounded-full border-2 border-dashed border-[#8198ed] grid place-items-center cursor-pointer hover:scale-105 bg-white shadow-xs text-xs overflow-hidden text-[#8198ed]"
                 >
-                  <Palette className="w-3.5 h-3.5" />
+                  <Palette className="w-3 h-3" />
                   <input
                     type="color"
                     value={textColor}
@@ -620,7 +634,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
             </div>
 
             {/* Language / Logo Quick Presets */}
-            <div className="grid grid-cols-2 gap-2.5 pt-1">
+            <div className="grid grid-cols-2 gap-2 pt-1">
               {LOGOS.map((l) => (
                 <button
                   key={l.id}
@@ -628,7 +642,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
                     setLogo(l.id)
                     setCustomText(l.text)
                   }}
-                  className={`py-3 px-3 rounded-xl font-pixel text-xs tracking-wider transition-all cursor-pointer shadow-md select-none text-center truncate ${
+                  className={`py-2.5 px-3 rounded-xl font-pixel text-xs tracking-wider transition-all cursor-pointer shadow-md select-none text-center truncate ${
                     customText === l.text
                       ? 'bg-[#8198ed] text-white shadow-[0_3px_0_#5b6fbc]'
                       : 'bg-[#b3c1ff] text-white hover:bg-[#a1b2ff] shadow-[0_3px_0_#8198ed]'

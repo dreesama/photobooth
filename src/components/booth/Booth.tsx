@@ -99,12 +99,18 @@ export default function Booth({
       <FloatingDeco />
 
       {step === 'edit' && template ? (
-        <div className="relative z-10 w-full min-h-screen">
+        <div className="relative z-10 w-full h-screen max-h-screen overflow-hidden">
           <Editor
             frames={frames}
             template={template}
             onRetake={() => {
               setStep('camera')
+            }}
+            onDone={async () => {
+              await clearActiveSessionState()
+              setFrames([])
+              setTemplate(null)
+              setStep('layout')
             }}
           />
         </div>
