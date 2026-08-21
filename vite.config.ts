@@ -374,158 +374,115 @@ function cloudUploadPlugin(): Plugin {
     return '127.0.0.1'
   }
 
-  return {
-    name: 'cloud-upload-middleware',
-    configureServer(server) {
-      // 1. Upload & Cache Image (Uploads to Catbox Litterbox / Catbox for public access)
-      server.middlewares.use('/api/upload', async (req, res, next) => {
-        if (req.method !== 'POST') return next()
+  function getBaseUrl(req: any) {
+    if (process.env.PUBLIC_URL) {
+      return process.env.PUBLIC_URL.replace(/\/$/, '')
+    }
+    if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+      return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    }
+    const forwardedProto = (req.headers['x-forwarded-proto'] as string) || 'http'
+    const host = (req.headers['x-forwarded-host'] as string) || req.headers.host
+    if (host && !host.includes('127.0.0.1') && !host.includes('localhost')) {
+      const proto = host.includes('railway.app') ? 'https' : forwardedProto
+      return `${proto}://${host}`
+    }
+    const port = process.env.PORT || '8443'
+    return `http://${getLocalLanIp()}:${port}`
+  }
 
-        let body = ''
-        req.on('data', (chunk) => {
-          body += chunk
-        })
+  function setupMiddlewares(middlewares: any) {
+    // 1. Upload & Cache Image
+    middlewares.use('/api/upload', async (req: any, res: any, next: any) => {
+      if (req.method !== 'POST') return next()
 
-        req.on('end', async () => {
-          try {
-            const { dataUrl } = JSON.parse(body)
-            const base64Data = dataUrl.split(',')[1] || dataUrl
-            const buffer = Buffer.from(base64Data, 'base64')
-            const id = `photo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
-
-            photoCache.set(id, buffer)
-
-            // 1. Try Litterbox (Catbox) for public 72h hosting
-            try {
-              const formData = new FormData()
-              const blob = new Blob([buffer], { type: 'image/png' })
-              formData.append('reqtype', 'fileupload')
-              formData.append('time', '72h')
-              formData.append('fileToUpload', blob, `omoidecam-${id}.png`)
-
-              const catboxRes = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
-                method: 'POST',
-                body: formData,
-              })
-
-              if (catboxRes.ok) {
-                const cloudUrl = (await catboxRes.text()).trim()
-                if (cloudUrl.startsWith('http')) {
-                  res.setHeader('Content-Type', 'application/json')
-                  res.end(JSON.stringify({ url: cloudUrl, id, source: 'litterbox' }))
-                  return
-                }
-              }
-            } catch (catboxErr) {
-              console.warn('Litterbox upload error on backend proxy:', catboxErr)
-            }
-
-            // 2. Try Catbox permanent
-            try {
-              const formData = new FormData()
-              const blob = new Blob([buffer], { type: 'image/png' })
-              formData.append('reqtype', 'fileupload')
-              formData.append('fileToUpload', blob, `omoidecam-${id}.png`)
-
-              const catboxRes = await fetch('https://catbox.moe/user/api.php', {
-                method: 'POST',
-                body: formData,
-              })
-
-              if (catboxRes.ok) {
-                const cloudUrl = (await catboxRes.text()).trim()
-                if (cloudUrl.startsWith('http')) {
-                  res.setHeader('Content-Type', 'application/json')
-                  res.end(JSON.stringify({ url: cloudUrl, id, source: 'catbox' }))
-                  return
-                }
-              }
-            } catch (catboxErr) {
-              console.warn('Catbox permanent upload error on backend proxy:', catboxErr)
-            }
-
-            // 3. Try FreeImage.host
-            try {
-              const formData = new FormData()
-              formData.append('key', '6d207e02198a847aa98d0a2a901485a5')
-              formData.append('action', 'upload')
-              formData.append('source', base64Data)
-              formData.append('format', 'json')
-
-              const freeRes = await fetch('https://freeimage.host/api/1/upload', {
-                method: 'POST',
-                body: formData,
-              })
-
-              if (freeRes.ok) {
-                const json = await freeRes.json()
-                if (json?.image?.url) {
-                  res.setHeader('Content-Type', 'application/json')
-                  res.end(JSON.stringify({ url: json.image.url, id, source: 'freeimage' }))
-                  return
-                }
-              }
-            } catch (freeErr) {
-              console.warn('FreeImage upload error on backend proxy:', freeErr)
-            }
-
-            // 4. Fallback: Local LAN IP (only if completely offline)
-            const port = process.env.PORT || '8443'
-            const lanIp = getLocalLanIp()
-            const mobileUrl = `http://${lanIp}:${port}/photo/${id}`
-
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ url: mobileUrl, id, source: 'local' }))
-          } catch (err: any) {
-            res.statusCode = 500
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ error: err.message }))
-          }
-        })
+      let body = ''
+      req.on('data', (chunk: any) => {
+        body += chunk
       })
 
-      // 2. Direct Raw Image Stream
-      server.middlewares.use('/api/raw/', (req, res, next) => {
-        const id = req.url?.replace('/', '').split('?')[0] || ''
-        const buffer = photoCache.get(id)
-        if (buffer) {
-          res.setHeader('Content-Type', 'image/png')
-          res.setHeader('Cache-Control', 'public, max-age=86400')
-          res.end(buffer)
-        } else {
-          res.statusCode = 404
-          res.end('Photo not found')
+      req.on('end', async () => {
+        try {
+          const { dataUrl } = JSON.parse(body)
+          const base64Data = dataUrl.split(',')[1] || dataUrl
+          const buffer = Buffer.from(base64Data, 'base64')
+          const id = `photo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+
+          photoCache.set(id, buffer)
+
+          const baseUrl = getBaseUrl(req)
+          const mobileUrl = `${baseUrl}/photo/${id}`
+
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ url: mobileUrl, id }))
+        } catch (err: any) {
+          res.statusCode = 500
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: err.message }))
         }
       })
+    })
 
-      // 3. Direct Image Download Attachment
-      server.middlewares.use('/api/download/', (req, res, next) => {
-        const id = req.url?.replace('/', '').split('?')[0] || ''
-        const buffer = photoCache.get(id)
-        if (buffer) {
-          res.setHeader('Content-Type', 'image/png')
-          res.setHeader('Content-Disposition', `attachment; filename="omoidecam-${id}.png"`)
-          res.end(buffer)
-        } else {
-          res.statusCode = 404
-          res.end('Photo not found')
-        }
-      })
+    // 2. Direct Raw Image Stream
+    middlewares.use('/api/raw/', (req: any, res: any, next: any) => {
+      const id = req.url?.replace('/', '').split('?')[0] || ''
+      const buffer = photoCache.get(id)
+      if (buffer) {
+        res.setHeader('Content-Type', 'image/png')
+        res.setHeader('Cache-Control', 'public, max-age=86400')
+        res.end(buffer)
+      } else {
+        res.statusCode = 404
+        res.end('Photo not found')
+      }
+    })
 
-      // 4. Beautiful Mobile Web Photo Viewer Page
-      server.middlewares.use('/photo/', (req, res, next) => {
-        const id = req.url?.replace('/', '').split('?')[0] || ''
-        const buffer = photoCache.get(id)
-        if (!buffer) {
-          res.statusCode = 404
-          res.end('Photo expired or not found')
-          return
-        }
+    // 3. Direct Image Download Attachment
+    middlewares.use('/api/download/', (req: any, res: any, next: any) => {
+      const id = req.url?.replace('/', '').split('?')[0] || ''
+      const buffer = photoCache.get(id)
+      if (buffer) {
+        res.setHeader('Content-Type', 'image/png')
+        res.setHeader('Content-Disposition', `attachment; filename="omoidecam-${id}.png"`)
+        res.end(buffer)
+      } else {
+        res.statusCode = 404
+        res.end('Photo not found')
+      }
+    })
 
-        const rawImgUrl = `/api/raw/${id}`
-        const downloadUrl = `/api/download/${id}`
+    // 4. Mobile Web Photo Viewer Page
+    middlewares.use('/photo/', (req: any, res: any, next: any) => {
+      const id = req.url?.replace('/', '').split('?')[0] || ''
+      const buffer = photoCache.get(id)
+      if (!buffer) {
+        res.statusCode = 404
+        res.setHeader('Content-Type', 'text/html')
+        res.end(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OmoideCam - Photo Not Found</title>
+  <style>
+    body { background: #eaf4ff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; text-align: center; color: #5b7fcb; }
+    .box { background: white; padding: 32px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); max-width: 320px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Photo Expired or Not Found</h2>
+    <p>Please take a new photo in the booth.</p>
+  </div>
+</body>
+</html>`)
+        return
+      }
 
-        const html = `<!DOCTYPE html>
+      const rawImgUrl = `/api/raw/${id}`
+      const downloadUrl = `/api/download/${id}`
+
+      const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -607,9 +564,18 @@ function cloudUploadPlugin(): Plugin {
 </body>
 </html>`
 
-        res.setHeader('Content-Type', 'text/html')
-        res.end(html)
-      })
+      res.setHeader('Content-Type', 'text/html')
+      res.end(html)
+    })
+  }
+
+  return {
+    name: 'cloud-upload-middleware',
+    configureServer(server) {
+      setupMiddlewares(server.middlewares)
+    },
+    configurePreviewServer(server) {
+      setupMiddlewares(server.middlewares)
     },
   }
 }
