@@ -389,6 +389,45 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
     }
   }
 
+  // Handle Done Button: Save latest finalized strip to archive, trigger cloud upload, and return to layout
+  const handleDone = async () => {
+    try {
+      const c = composeStrip({
+        frames,
+        template,
+        filter,
+        background: bg,
+        frameColor,
+        stickers,
+        logo: null,
+        customText,
+        textColor,
+        fontStyle,
+      })
+      const stripDataUrl = c.toDataURL('image/png')
+
+      // Save to Archive DB
+      await saveToArchive({
+        id: archiveSessionIdRef.current,
+        stripDataUrl,
+        rawFrames: rawFramesDataUrls,
+        templateId: template.id,
+        filter,
+        backgroundId: bg.id,
+        stickers,
+        customText,
+        textColor,
+      }).catch((e) => console.warn('Archive save error:', e))
+
+      // Also trigger cloud upload in background
+      uploadPhotoStrip(stripDataUrl).catch(() => {})
+    } catch (e) {
+      console.warn('Done save error:', e)
+    } finally {
+      onDone()
+    }
+  }
+
   const copyLink = () => {
     navigator.clipboard?.writeText(hostedUrl || window.location.href)
     setCopied(true)
@@ -492,11 +531,11 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
             </button>
           </div>
 
-          {/* Done Button: returns to layout picker for next guest */}
+          {/* Done Button: saves finalized photo to archive and returns to layout picker for next guest */}
           <div className="flex-1 p-0.5 bg-white rounded-xl shadow-[0_4px_12px_rgba(100,120,190,0.18)]">
             <button
               type="button"
-              onClick={onDone}
+              onClick={handleDone}
               className="w-full bg-[#52b788] hover:bg-[#40916c] active:translate-y-0.5 text-white py-2.5 sm:py-3 rounded-lg font-pixel text-[10px] sm:text-xs tracking-wider shadow-[2px_2px_0px_#2d6a4f] transition-all cursor-pointer select-none flex items-center justify-center gap-1.5"
             >
               <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
