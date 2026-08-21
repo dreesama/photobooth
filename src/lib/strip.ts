@@ -1,4 +1,8 @@
 import { stickerImage, type PlacedSticker } from './stickers'
+import frameTextureUrl from '../assets/frame_texture.png'
+
+const frameTextureImg = new Image()
+frameTextureImg.src = frameTextureUrl
 
 // Real frame backgrounds imported from the OmoideCam Figma design (imgImage4–13),
 // plus the couple illustration the user added.
@@ -36,13 +40,13 @@ export const FILTERS: { id: FilterId; label: string; css: string }[] = [
   { id: 'hairspray', label: 'Hairspray', css: 'saturate(1.3) contrast(0.9) brightness(1.12)' },
   { id: 'bw', label: 'B&W', css: 'grayscale(1) contrast(1.1)' },
   { id: 'blur', label: 'Blur', css: 'blur(2.5px)' },
-  { id: 'pixelate', label: 'Pixelate', css: 'contrast(1.05)' }, // handled specially on canvas
+  { id: 'pixelate', label: 'Pixelate', css: 'contrast(1.05)' },
 ]
 
 export const cssForFilter = (id: FilterId) =>
   FILTERS.find((f) => f.id === id)?.css ?? 'none'
 
-/* ---------------- Layout templates (carousel on the Select screen) ---------------- */
+/* ---------------- Layout templates ---------------- */
 export type Template = {
   id: string
   label: string
@@ -54,114 +58,167 @@ export const TEMPLATES: Template[] = [
   { id: 'strip2', label: '2x6', sub: '2 photo', cols: 1, rows: 2 },
   { id: 'strip3', label: '2x6', sub: '3 photo', cols: 1, rows: 3 },
   { id: 'strip4', label: '2x6', sub: '4 photo', cols: 1, rows: 4 },
-  { id: 'grid4', label: '4x4', sub: '4 photo', cols: 2, rows: 2 },
+  { id: 'grid6', label: '4x6', sub: '6 photo', cols: 2, rows: 3 },
   { id: 'grid8', label: '4x6', sub: '8 photo', cols: 2, rows: 4 },
 ]
 export const countFor = (t: Template) => (t ? t.cols * t.rows : 0)
 
 /* ---------------- Logo language (Translation buttons) ---------------- */
-export type LogoLang = 'en' | 'zh' | 'ko' | 'ja'
+export type LogoLang = 'en' | 'zh' | 'ko' | 'ja' | 'tl'
 export const LOGOS: { id: LogoLang; label: string; text: string }[] = [
   { id: 'en', label: 'OmoideCam', text: 'OmoideCam' },
   { id: 'zh', label: '思忆相机', text: '思忆相机' },
   { id: 'ko', label: '오모이드캠', text: '오모이드캠' },
   { id: 'ja', label: 'おもいでカメラ', text: 'おもいでカメラ' },
+  { id: 'tl', label: 'ᜂᜋᜓᜁᜇᜒᜃ᜔ᜀᜋ᜔', text: 'ᜂᜋᜓᜁᜇᜒᜃ᜔ᜀᜋ᜔' },
 ]
 export const logoText = (id: LogoLang) => LOGOS.find((l) => l.id === id)?.text ?? 'OmoideCam'
 
-/* ---------------- Backgrounds (frame): none + real image frames ---------------- */
+/* ---------------- Text Colors ---------------- */
+export const TEXT_COLORS = [
+  { id: 'blue', label: 'Classic Blue', color: '#5b7fcb' },
+  { id: 'white', label: 'Pure White', color: '#ffffff' },
+  { id: 'black', label: 'Charcoal Black', color: '#1e293b' },
+  { id: 'pink', label: 'Sakura Pink', color: '#ff6b9d' },
+  { id: 'purple', label: 'Lavender', color: '#9b72cf' },
+  { id: 'mint', label: 'Mint Green', color: '#2ec4b6' },
+  { id: 'coral', label: 'Sunset Coral', color: '#ff8360' },
+  { id: 'gold', label: 'Warm Gold', color: '#e09f3e' },
+]
+
+import { getCustomBackgrounds, type CustomBackground } from './db'
+
+/* ---------------- Backgrounds (frame) ---------------- */
 export type BgKind = 'none' | 'image'
 export type Background = {
   id: string
+  label?: string
   kind: BgKind
-  url?: string // image url (local imported asset)
-  _img?: HTMLImageElement // preloaded image (filled at runtime)
+  url?: string
+  _img?: HTMLImageElement
+  isCustom?: boolean
 }
 
-// Preloads all image-backed backgrounds so composeStrip can draw them synchronously.
-export function preloadBackgrounds() {
-  BACKGROUNDS.forEach((b) => {
-    if (b.kind === 'image' && b.url && !b._img) {
-      const im = new Image()
-      im.src = b.url
-      b._img = im
-    }
-  })
-}
-export const BACKGROUNDS: Background[] = [
-  { id: 'none', kind: 'none' },
-  { id: 'bg1', kind: 'image', url: bg1 },
-  { id: 'bg2', kind: 'image', url: bg2 },
-  { id: 'bg3', kind: 'image', url: bg3 },
-  { id: 'bg4', kind: 'image', url: bg4 },
-  { id: 'bg5', kind: 'image', url: bg5 },
-  { id: 'bg6', kind: 'image', url: bg6 },
-  { id: 'bg7', kind: 'image', url: bg7 },
-  { id: 'bg8', kind: 'image', url: bg8 },
-  { id: 'bg9', kind: 'image', url: bg9 },
-  { id: 'bg10', kind: 'image', url: bg10 },
-  { id: 'bg11', kind: 'image', url: bg11 },
+export const BUILTIN_BACKGROUNDS: Background[] = [
+  { id: 'none', label: 'None', kind: 'none' },
+  { id: 'bg1', label: 'Frame 1', kind: 'image', url: bg1 },
+  { id: 'bg2', label: 'Frame 2', kind: 'image', url: bg2 },
+  { id: 'bg3', label: 'Frame 3', kind: 'image', url: bg3 },
+  { id: 'bg4', label: 'Frame 4', kind: 'image', url: bg4 },
+  { id: 'bg5', label: 'Frame 5', kind: 'image', url: bg5 },
+  { id: 'bg6', label: 'Frame 6', kind: 'image', url: bg6 },
+  { id: 'bg7', label: 'Frame 7', kind: 'image', url: bg7 },
+  { id: 'bg8', label: 'Frame 8', kind: 'image', url: bg8 },
+  { id: 'bg9', label: 'Frame 9', kind: 'image', url: bg9 },
+  { id: 'bg10', label: 'Frame 10', kind: 'image', url: bg10 },
+  { id: 'bg11', label: 'Frame 11', kind: 'image', url: bg11 },
 ]
 
-/* Frame background can also just be a flat color (kept for the color swatches). */
-export const FRAME_COLORS = ['#ffffff', '#ffe3ec', '#dbe8f5', '#e7f0dc', '#efe6f7', '#fff4d6']
+export let BACKGROUNDS: Background[] = [...BUILTIN_BACKGROUNDS]
 
-/* ---------------- Compositor ---------------- */
-type ComposeOpts = {
+export async function reloadBackgrounds(): Promise<Background[]> {
+  try {
+    const customBgs = await getCustomBackgrounds()
+    const mappedCustom: Background[] = customBgs.map((c: CustomBackground) => ({
+      id: c.id,
+      label: c.label,
+      kind: 'image',
+      url: c.url,
+      isCustom: true,
+    }))
+    BACKGROUNDS = [...BUILTIN_BACKGROUNDS, ...mappedCustom]
+  } catch {
+    BACKGROUNDS = [...BUILTIN_BACKGROUNDS]
+  }
+  return BACKGROUNDS
+}
+
+export function preloadBackgrounds() {
+  reloadBackgrounds().then((bgs) => {
+    bgs.forEach((b) => {
+      if (b.url && !b._img) {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.src = b.url
+        b._img = img
+      }
+    })
+  })
+}
+
+/* ---------------- Ultra High-Resolution 300 DPI Canvas Rendering ---------------- */
+export type ComposeOpts = {
   frames: HTMLCanvasElement[]
   template: Template
   filter: FilterId
   background: Background
   frameColor: string
   stickers: PlacedSticker[]
-  logo: LogoLang
+  logo?: LogoLang | null
+  customText?: string
+  textColor?: string
 }
 
-const CELL_W = 520
-const CELL_H = 390
-const PAD = 30
-const GAP = 14
-const FOOT = 80
+// 300 DPI Ultra Sharp Super-Sampled Dimensions
+const CELL_W = 1040
+const CELL_H = 780 // Exact 4:3 Landscape Ratio (1040 / 780 = 1.333)
+const PAD_X = 60 // Polaroid side whitespace
+const PAD_TOP = 60 // Polaroid top whitespace
+const GAP = 36 // Polaroid photo gap
+const FOOT = 192 // Iconic polaroid bottom chin
 
 export function stripSize(t: Template) {
-  const width = PAD * 2 + t.cols * CELL_W + (t.cols - 1) * GAP
-  const height = PAD + t.rows * CELL_H + (t.rows - 1) * GAP + FOOT
+  const width = PAD_X * 2 + t.cols * CELL_W + (t.cols - 1) * GAP
+  const height = PAD_TOP + t.rows * CELL_H + (t.rows - 1) * GAP + FOOT
   return { width, height }
 }
 
 export function composeStrip(opts: ComposeOpts): HTMLCanvasElement {
-  const { frames, template, filter, background, frameColor, stickers, logo } = opts
+  const { frames, template, filter, background, frameColor, stickers, logo, customText, textColor } = opts
   const { width, height } = stripSize(template)
 
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
-  const ctx = canvas.getContext('2d')!
+  const ctx = canvas.getContext('2d', { alpha: false })!
 
-  // ---- frame background ----
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+
+  // ---- frame background (clean white polaroid / solid color / image) ----
   ctx.fillStyle = frameColor
   ctx.fillRect(0, 0, width, height)
+
+  // Authentic paper canvas mesh texture
+  if (frameTextureImg.complete && frameTextureImg.naturalWidth) {
+    const pat = ctx.createPattern(frameTextureImg, 'repeat')
+    if (pat) {
+      ctx.save()
+      ctx.fillStyle = pat
+      ctx.globalAlpha = 0.95
+      ctx.fillRect(0, 0, width, height)
+      ctx.restore()
+    }
+  }
+
   if (background.kind === 'image' && background._img && background._img.complete && background._img.naturalWidth) {
     drawCover(ctx, background._img, 0, 0, width, height)
   }
 
-  // ---- photos ----
+  // ---- photos (borderless, polaroid whitespace margins, exact 4:3 landscape) ----
   frames.forEach((frame, i) => {
     const c = i % template.cols
     const r = Math.floor(i / template.cols)
-    const x = PAD + c * (CELL_W + GAP)
-    const y = PAD + r * (CELL_H + GAP)
+    const x = PAD_X + c * (CELL_W + GAP)
+    const y = PAD_TOP + r * (CELL_H + GAP)
     drawPhoto(ctx, frame, x, y, CELL_W, CELL_H, filter)
-    ctx.strokeStyle = 'rgba(0,0,0,0.18)'
-    ctx.lineWidth = 2
-    ctx.strokeRect(x, y, CELL_W, CELL_H)
   })
 
   // ---- stickers (normalized to whole canvas) ----
   stickers.forEach((s) => {
     const im = stickerImage(s.src)
     if (!im || !im.complete || !im.naturalWidth) return
-    const base = 130 * s.scale
+    const base = 260 * s.scale
     const sw = base
     const sh = base * (im.naturalHeight / im.naturalWidth)
     ctx.save()
@@ -171,15 +228,64 @@ export function composeStrip(opts: ComposeOpts): HTMLCanvasElement {
     ctx.restore()
   })
 
-  // ---- footer logo ----
-  const footY = height - FOOT
-  ctx.fillStyle = readableOn(frameColor, background)
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.font = `28px "${logo === 'en' ? 'Press Start 2P' : 'Noto Sans JP'}", monospace`
-  ctx.fillText(logoText(logo), width / 2, footY + FOOT / 2)
+  // ---- footer text (optional: custom text, logo preset, or completely blank) ----
+  const text = customText !== undefined ? customText : logo ? logoText(logo) : ''
+  if (text && text.trim().length > 0) {
+    const footY = height - FOOT
+    const activeColor = textColor || (background.kind === 'image' ? '#ffffff' : '#5b7fcb')
+
+    ctx.save()
+    // Soft shadow/outline to ensure text stands out on any dark, bright or patterned background
+    ctx.shadowColor = activeColor === '#ffffff' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.8)'
+    ctx.shadowBlur = 6
+    ctx.shadowOffsetX = 0
+    ctx.shadowOffsetY = 2
+
+    ctx.fillStyle = activeColor
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.font = `bold 44px "${logo === 'en' || !logo ? 'Press Start 2P' : 'Noto Sans JP'}", monospace`
+    ctx.fillText(text.trim(), width / 2, footY + FOOT / 2)
+    ctx.restore()
+  }
 
   return canvas
+}
+
+export function composePrintSheet(stripCanvas: HTMLCanvasElement, double2x6 = true): HTMLCanvasElement {
+  const printCanvas = document.createElement('canvas')
+  printCanvas.width = 1200
+  printCanvas.height = 1800
+  const ctx = printCanvas.getContext('2d')!
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, 1200, 1800)
+
+  const sw = stripCanvas.width
+  const sh = stripCanvas.height
+
+  if (sw < 1300) {
+    // 1-column strip (2x6)
+    const targetW = 560
+    const targetH = Math.min(1720, (targetW / sw) * sh)
+    const offsetY = Math.max(40, (1800 - targetH) / 2)
+
+    if (double2x6) {
+      ctx.drawImage(stripCanvas, 24, offsetY, targetW, targetH)
+      ctx.drawImage(stripCanvas, 616, offsetY, targetW, targetH)
+    } else {
+      ctx.drawImage(stripCanvas, (1200 - targetW) / 2, offsetY, targetW, targetH)
+    }
+  } else {
+    // 2-column grid (4x6)
+    const targetW = 1120
+    const targetH = Math.min(1720, (targetW / sw) * sh)
+    const offsetY = Math.max(40, (1800 - targetH) / 2)
+    ctx.drawImage(stripCanvas, (1200 - targetW) / 2, offsetY, targetW, targetH)
+  }
+
+  return printCanvas
 }
 
 function drawPhoto(
@@ -188,21 +294,26 @@ function drawPhoto(
   x: number, y: number, w: number, h: number,
   filter: FilterId,
 ) {
+  ctx.save()
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+
   if (filter === 'pixelate') {
     const tmp = document.createElement('canvas')
-    const scale = 0.06
+    const scale = 0.08
     tmp.width = Math.max(1, Math.round(w * scale))
     tmp.height = Math.max(1, Math.round(h * scale))
     const tctx = tmp.getContext('2d')!
     tctx.drawImage(frame, 0, 0, tmp.width, tmp.height)
     ctx.imageSmoothingEnabled = false
     ctx.drawImage(tmp, x, y, w, h)
-    ctx.imageSmoothingEnabled = true
+    ctx.restore()
     return
   }
+
   ctx.filter = cssForFilter(filter)
   ctx.drawImage(frame, x, y, w, h)
-  ctx.filter = 'none'
+  ctx.restore()
 }
 
 function drawCover(
@@ -210,13 +321,12 @@ function drawCover(
   img: HTMLImageElement,
   x: number, y: number, w: number, h: number,
 ) {
+  ctx.save()
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
   const r = Math.max(w / img.width, h / img.height)
   const dw = img.width * r
   const dh = img.height * r
   ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh)
-}
-
-function readableOn(_color: string, bg: Background) {
-  if (bg.kind === 'image') return '#ffffff'
-  return '#5b6fbc'
+  ctx.restore()
 }

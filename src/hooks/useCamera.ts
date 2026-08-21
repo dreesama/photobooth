@@ -21,22 +21,57 @@ export function useCamera() {
       return
     }
     setStatus('starting')
+
+    let stream: MediaStream | null = null
+
+    // Multi-tier fallback to support all webcams (1080p, 720p, 480p, virtual cameras)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 960 }, facingMode: 'user' },
+      // Tier 1: Ideal Full HD
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1920 },
+          height: { ideal: 1440 },
+          facingMode: 'user',
+        },
         audio: false,
       })
+    } catch {
+      try {
+        // Tier 2: Standard 720p
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: 'user',
+          },
+          audio: false,
+        })
+      } catch {
+        try {
+          // Tier 3: Basic universal video constraint (guaranteed to work on any camera)
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          })
+        } catch (err) {
+          const denied =
+            err instanceof DOMException &&
+            (err.name === 'NotAllowedError' || err.name === 'SecurityError')
+          setStatus(denied ? 'denied' : 'error')
+          return
+        }
+      }
+    }
+
+    if (stream) {
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
-        await videoRef.current.play().catch(() => {})
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().catch(() => {})
+        }
       }
       setStatus('live')
-    } catch (err) {
-      const denied =
-        err instanceof DOMException &&
-        (err.name === 'NotAllowedError' || err.name === 'SecurityError')
-      setStatus(denied ? 'denied' : 'error')
     }
   }, [])
 

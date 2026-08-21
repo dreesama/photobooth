@@ -59,6 +59,13 @@ body {
 .font-pixel {
   font-family: 'Press Start 2P', monospace;
 }
+
+.polaroid-texture {
+  background-color: #ffffff;
+  background-image: url('./assets/frame_texture.png');
+  background-repeat: repeat;
+  background-size: 140px 140px;
+}
 .font-crt {
   font-family: 'VT323', monospace;
 }
@@ -456,6 +463,21 @@ body {
   color: #9eadeb;
   letter-spacing: 0.5px;
   line-height: 2;
+}
+
+/* ============ CLEAN WHITE PHOTO FRAME ============ */
+.polaroid-frame {
+  background-color: #ffffff;
+  border-radius: 4px;
+  box-shadow:
+    0 4px 20px rgba(100, 120, 190, 0.15),
+    0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.polaroid-photo-slot {
+  background: transparent;
+  border: none;
+  overflow: hidden;
 }
 
 /* ============ BOOTH reskin (periwinkle) ============ */

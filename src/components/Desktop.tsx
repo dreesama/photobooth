@@ -61,9 +61,30 @@ const DECO = [
   { src: cloudSm, top: '80%', left: '70%', size: '110px', dur: '7.5s', dist: '14px' },
 ]
 
-export default function Desktop({ onStart }: { onStart: () => void }) {
+export default function Desktop({
+  onStart,
+  onOpenAdmin,
+}: {
+  onStart: () => void
+  onOpenAdmin?: () => void
+}) {
   return (
     <div className="landing">
+      {/* Top right Admin shortcut button */}
+      {onOpenAdmin && (
+        <div className="fixed top-3 right-3 sm:top-4 sm:right-4 z-50">
+          <button
+            onClick={onOpenAdmin}
+            title="Open Admin Studio (Ctrl+Shift+A)"
+            className="btn95 !px-3 sm:!px-4 !py-1.5 text-[9px] sm:text-xs font-bold flex items-center gap-1.5 shadow-md bg-white/90 backdrop-blur-xs"
+          >
+            <span>⚙️</span>
+            <span className="hidden sm:inline">Admin Studio</span>
+            <span className="sm:hidden">Admin</span>
+          </button>
+        </div>
+      )}
+
       {/* floating decorations */}
       <div className="deco-layer" aria-hidden>
         {DECO.map((d, i) => (

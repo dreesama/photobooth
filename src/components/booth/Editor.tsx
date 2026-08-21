@@ -4,6 +4,7 @@ import {
   BACKGROUNDS,
   FILTERS,
   LOGOS,
+  TEXT_COLORS,
   preloadBackgrounds,
   composeStrip,
   stripSize,
@@ -13,6 +14,8 @@ import {
   type Template,
 } from '../../lib/strip'
 import { STICKERS, loadStickers, type PlacedSticker } from '../../lib/stickers'
+import { saveToArchive, saveActiveSessionState, getActiveSessionState } from '../../lib/db'
+import { uploadPhotoStrip } from '../../lib/upload'
 
 type Props = {
   frames: HTMLCanvasElement[]
@@ -25,10 +28,19 @@ export default function Editor({ frames, template, onRetake }: Props) {
   const [bg, setBg] = useState<Background>(BACKGROUNDS[0])
   const [frameColor] = useState('#ffffff')
   const [logo, setLogo] = useState<LogoLang>('en')
+  const [customText, setCustomText] = useState<string>('OmoideCam')
+  const [textColor, setTextColor] = useState<string>('#5b7fcb')
   const [stickers, setStickers] = useState<PlacedSticker[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [ready, setReady] = useState(0)
+
+  // QR Modal State
+  const [showShare, setShowShare] = useState(false)
+  const [qrLoading, setQrLoading] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
+  const [hostedUrl, setHostedUrl] = useState<string>('')
+  const [qrError, setQrError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const stageRef = useRef<HTMLDivElement | null>(null)
   const drag = useRef<{ uid: string } | null>(null)
@@ -39,38 +51,67 @@ export default function Editor({ frames, template, onRetake }: Props) {
     BACKGROUNDS.forEach((b) => {
       if (b._img && !b._img.complete) b._img.onload = () => setReady((r) => r + 1)
     })
+
+    // Restore customization states if session exists
+    async function restoreActiveCustomizations() {
+      const saved = await getActiveSessionState()
+      if (saved) {
+        if (saved.filter) setFilter(saved.filter as FilterId)
+        if (saved.customText !== undefined) setCustomText(saved.customText)
+        if (saved.textColor) setTextColor(saved.textColor)
+        if (saved.stickers && Array.isArray(saved.stickers)) setStickers(saved.stickers)
+        if (saved.backgroundId) {
+          const matchingBg = BACKGROUNDS.find((b) => b.id === saved.backgroundId)
+          if (matchingBg) setBg(matchingBg)
+        }
+      }
+    }
+    restoreActiveCustomizations()
   }, [])
+
+  // Persist customization edits into active session
+  useEffect(() => {
+    if (frames.length > 0 && template) {
+      saveActiveSessionState({
+        step: 'edit',
+        templateId: template.id,
+        rawFrames: frames.map((f) => f.toDataURL('image/png')),
+        filter,
+        backgroundId: bg.id,
+        customText,
+        textColor,
+        stickers,
+        updatedAt: Date.now(),
+      }).catch(() => {})
+    }
+  }, [frames, template, filter, bg, customText, textColor, stickers])
 
   const { width, height } = stripSize(template)
 
   const baseUrl = useMemo(
     () =>
-      composeStrip({ frames, template, filter, background: bg, frameColor, stickers: [], logo })
+      composeStrip({ frames, template, filter, background: bg, frameColor, stickers: [], logo, customText, textColor })
         .toDataURL('image/png'),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [frames, template, filter, bg, frameColor, logo, ready]
+    [frames, template, filter, bg, frameColor, logo, customText, textColor, ready]
   )
 
   const toggleSticker = (src: string) => {
-    // If sticker is already placed, toggle it off; otherwise place it near corner/center
     const existing = stickers.find((s) => s.src === src)
     if (existing) {
       setStickers((list) => list.filter((s) => s.src !== src))
       if (selected === existing.uid) setSelected(null)
     } else {
-      const uid = `${src}-${Date.now()}`
-      // Preset default smart placements (alternating corners for cute purikura look)
-      const count = stickers.length
-      const presets = [
-        { x: 0.12, y: 0.88 }, // bottom left
-        { x: 0.88, y: 0.88 }, // bottom right
-        { x: 0.88, y: 0.12 }, // top right
-        { x: 0.12, y: 0.12 }, // top left
-        { x: 0.5, y: 0.5 },   // center
-      ]
-      const pos = presets[count % presets.length]
-      const newSticker: PlacedSticker = { uid, src, x: pos.x, y: pos.y, scale: 1.1, rotation: 0 }
-      setStickers((list) => [...list, newSticker])
+      const uid = `st_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+      const next: PlacedSticker = {
+        uid,
+        src,
+        x: 0.5,
+        y: 0.5,
+        scale: 1,
+        rotation: 0,
+      }
+      setStickers((list) => [...list, next])
       setSelected(uid)
     }
   }
@@ -79,133 +120,230 @@ export default function Editor({ frames, template, onRetake }: Props) {
     e.stopPropagation()
     setSelected(uid)
     drag.current = { uid }
-    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch {}
   }
 
   const onStageMove = (e: PointerEvent) => {
-    if (!drag.current || !stageRef.current) return
+    const dragging = drag.current
+    if (!dragging || !stageRef.current) return
+    const currentUid = dragging.uid
     const r = stageRef.current.getBoundingClientRect()
+    if (!r.width || !r.height) return
     const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
     const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
-    setStickers((l) => l.map((s) => (s.uid === drag.current!.uid ? { ...s, x, y } : s)))
+    setStickers((l) => l.map((s) => (s.uid === currentUid ? { ...s, x, y } : s)))
   }
 
-  const download = () => {
-    const c = composeStrip({ frames, template, filter, background: bg, frameColor, stickers, logo })
+  // Handle Delete/Backspace to delete selected sticker
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
+        if (
+          document.activeElement?.tagName === 'INPUT' ||
+          document.activeElement?.tagName === 'TEXTAREA'
+        ) {
+          return
+        }
+        setStickers((l) => l.filter((s) => s.uid !== selected))
+        setSelected(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selected])
+
+  const download = async () => {
+    const c = composeStrip({ frames, template, filter, background: bg, frameColor, stickers, logo, customText, textColor })
+    const stripDataUrl = c.toDataURL('image/png')
     const a = document.createElement('a')
-    a.href = c.toDataURL('image/png')
+    a.href = stripDataUrl
     a.download = `omoidecam-${Date.now()}.png`
     a.click()
+
+    try {
+      const rawFrames = frames.map((f) => f.toDataURL('image/png'))
+      await saveToArchive({
+        stripDataUrl,
+        rawFrames,
+        templateId: template.id,
+        filter,
+        backgroundId: bg.id,
+      })
+    } catch (e) {
+      console.warn('Archive save error:', e)
+    }
   }
 
-  const [copied, setCopied] = useState(false)
-  const [showShare, setShowShare] = useState(false)
+  // Handle QR Modal Open & Instant Upload
+  const handleOpenQR = async () => {
+    setShowShare(true)
+    setQrLoading(true)
+    setQrDataUrl('')
+    setHostedUrl('')
+    setQrError(null)
 
-  useEffect(() => {
-    if (showShare) {
-      QRCode.toDataURL(window.location.href, { margin: 1, width: 160 })
-        .then(setQrDataUrl)
-        .catch(() => {})
-    }
-  }, [showShare])
-
-  const copyLink = async () => {
     try {
-      await navigator.clipboard.writeText(window.location.href)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      /* ignore */
+      const c = composeStrip({ frames, template, filter, background: bg, frameColor, stickers, logo, customText, textColor })
+      const stripDataUrl = c.toDataURL('image/png')
+
+      const directUrl = await uploadPhotoStrip(stripDataUrl)
+      setHostedUrl(directUrl)
+
+      // Generate QR Code strictly for the public hosted image link
+      const qrCodeUrl = await QRCode.toDataURL(directUrl, {
+        margin: 1,
+        width: 260,
+        color: { dark: '#1e293b', light: '#ffffff' },
+      })
+      setQrDataUrl(qrCodeUrl)
+    } catch (err: any) {
+      console.warn('QR generation error:', err)
+      setQrError('Could not connect to image server. Please check your internet connection or save directly.')
+    } finally {
+      setQrLoading(false)
     }
+  }
+
+  // Auto-save on initial mount
+  const hasSavedRef = useRef(false)
+  useEffect(() => {
+    if (frames.length > 0 && !hasSavedRef.current) {
+      hasSavedRef.current = true
+      const c = composeStrip({ frames, template, filter, background: bg, frameColor, stickers, logo, customText, textColor })
+      const stripDataUrl = c.toDataURL('image/png')
+      const rawFrames = frames.map((f) => f.toDataURL('image/png'))
+      saveToArchive({
+        stripDataUrl,
+        rawFrames,
+        templateId: template.id,
+        filter,
+        backgroundId: bg.id,
+      }).catch(() => {})
+    }
+  }, [frames, template, filter, bg, frameColor, logo, customText, textColor, stickers])
+
+  const copyLink = () => {
+    navigator.clipboard?.writeText(hostedUrl || window.location.href)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[300px_1fr] items-start max-w-6xl mx-auto">
-      {/* ---- Left Column: Strip Preview + Action Buttons ---- */}
-      <div className="flex flex-col items-center">
-        <div className="w-full flex items-center justify-between mb-3">
-          <h2 className="font-pixel text-[#8198ed] text-xl sm:text-2xl flex items-center gap-1.5">
-            <span>Preview</span>
-            <span className="text-sm">✨</span>
+    <div className="w-full min-h-screen grid grid-cols-1 lg:grid-cols-[40%_60%] xl:grid-cols-[42%_58%] items-stretch">
+      {/* ================= LEFT HALF: Preview Title + Photo Strip + Download/QR ================= */}
+      <div className="flex flex-col justify-between p-6 sm:p-10 lg:p-12 min-h-screen relative">
+        {/* Top Header: Preview */}
+        <div className="w-full flex items-center justify-between">
+          <h2
+            className="font-pixel text-[#5b7fcb] text-3xl sm:text-4xl tracking-wider select-none"
+            style={{
+              textShadow: '0 3px 0 #9cb6ec, 0 6px 14px rgba(91,127,203,0.3)',
+            }}
+          >
+            Preview
           </h2>
           <button
             onClick={onRetake}
-            className="font-pixel text-[9px] text-[#8792c4] hover:text-[#8198ed] underline"
+            className="font-pixel text-[10px] sm:text-xs text-[#8792c4] hover:text-[#5b7fcb] underline select-none cursor-pointer"
           >
             ↺ Retake
           </button>
         </div>
 
-        {/* Photo Strip Preview Box */}
-        <div
-          ref={stageRef}
-          className="relative w-full max-w-[220px] touch-none bevel-in p-1 bg-white shadow-md rounded-md"
-          style={{ aspectRatio: `${width} / ${height}` }}
-          onPointerMove={onStageMove}
-          onPointerUp={() => (drag.current = null)}
-          onPointerDown={() => setSelected(null)}
-        >
-          <img src={baseUrl} alt="Your photo strip" className="w-full h-full block rounded-sm" />
-          {stickers.map((s) => (
-            <button
-              key={s.uid}
-              onPointerDown={onStickerDown(s.uid)}
-              className={`absolute leading-none touch-none ${
-                selected === s.uid ? 'outline outline-2 outline-dashed outline-[#8198ed]' : ''
-              }`}
-              style={{
-                left: `${s.x * 100}%`,
-                top: `${s.y * 100}%`,
-                transform: `translate(-50%,-50%) rotate(${s.rotation}deg)`,
-                width: `${s.scale * 38}px`,
-              }}
-            >
-              <img src={s.src} alt="" className="w-full h-full object-contain pointer-events-none select-none" />
-            </button>
-          ))}
-        </div>
+        {/* Center: Photo Strip Canvas */}
+        <div className="my-auto py-6 flex items-center justify-center">
+          <div
+            ref={stageRef}
+            className="relative bg-white shadow-[0_12px_36px_rgba(90,110,185,0.25)] rounded-xs overflow-hidden select-none"
+            style={{
+              width: template.cols === 2 ? 'clamp(200px, 24vw, 300px)' : 'clamp(145px, 16vw, 210px)',
+              aspectRatio: `${width} / ${height}`,
+            }}
+            onPointerMove={onStageMove}
+            onPointerUp={() => (drag.current = null)}
+            onPointerCancel={() => (drag.current = null)}
+            onPointerDown={() => setSelected(null)}
+          >
+            <img
+              src={baseUrl}
+              alt="Your photo strip"
+              className="w-full h-full block pointer-events-none"
+            />
 
-        {/* Bottom Action Bar: Download & QR */}
-        <div className="flex gap-2 w-full max-w-[220px] mt-4">
-          <button className="btn95 is-primary flex-1 !py-2.5 text-xs font-bold" onClick={download}>
-            Download
-          </button>
-          <button className="btn95 is-accent !px-4 !py-2.5 text-xs font-bold" onClick={() => setShowShare((v) => !v)}>
-            QR
-          </button>
-        </div>
-
-        {showShare && (
-          <div className="mt-3 bevel-in bg-white p-3 text-center space-y-2 w-full max-w-[220px] rounded">
-            <p className="font-crt text-lg text-[#8792c4] font-bold">Scan to open on mobile:</p>
-            {qrDataUrl && (
-              <img src={qrDataUrl} alt="QR Code" className="w-28 h-28 mx-auto border border-[#d4dcf7] p-1 rounded bg-white" />
-            )}
-            <div className="flex gap-1.5 pt-1">
-              <input
-                readOnly
-                value={window.location.href}
-                className="flex-1 bevel-in bg-white px-2 py-1 font-crt text-base outline-none truncate"
-              />
-              <button className="btn95 !px-2 !py-1 text-[9px]" onClick={copyLink}>
-                {copied ? '✓' : 'copy'}
+            {stickers.map((s) => (
+              <button
+                key={s.uid}
+                onPointerDown={onStickerDown(s.uid)}
+                onPointerMove={onStageMove}
+                onPointerUp={() => (drag.current = null)}
+                onPointerCancel={() => (drag.current = null)}
+                className={`absolute leading-none touch-none cursor-move ${
+                  selected === s.uid ? 'outline outline-2 outline-dashed outline-[#8198ed]' : ''
+                }`}
+                style={{
+                  left: `${s.x * 100}%`,
+                  top: `${s.y * 100}%`,
+                  transform: `translate(-50%,-50%) rotate(${s.rotation}deg)`,
+                  width: `${s.scale * 36}px`,
+                }}
+              >
+                <img
+                  src={s.src}
+                  alt=""
+                  className="w-full h-full object-contain pointer-events-none select-none"
+                />
               </button>
-            </div>
+            ))}
           </div>
-        )}
+        </div>
+
+        {/* Bottom Bar: Download & QR */}
+        <div className="flex items-center gap-3 w-full max-w-[340px]">
+          {/* Download Button with outer white container card */}
+          <div className="flex-1 p-1 bg-white rounded-xl shadow-[0_4px_12px_rgba(100,120,190,0.18)]">
+            <button
+              type="button"
+              onClick={download}
+              className="w-full bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#5b6fbc] transition-all cursor-pointer select-none text-center"
+            >
+              Download
+            </button>
+          </div>
+
+          {/* QR Button with outer white container card */}
+          <div className="p-1 bg-white rounded-xl shadow-[0_4px_12px_rgba(100,120,190,0.18)]">
+            <button
+              type="button"
+              onClick={handleOpenQR}
+              className="bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white px-5 py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#5b6fbc] transition-all cursor-pointer select-none"
+            >
+              QR
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* ---- Right Column: Control Options (Filters, Background, Stickers, Translation) ---- */}
-      <div className="space-y-6 overflow-hidden">
-        {/* Filters */}
+      {/* ================= RIGHT HALF: Full Height Customization Panel ================= */}
+      <div className="bg-[#efefff] min-h-screen px-6 sm:px-10 lg:px-14 py-8 sm:py-10 overflow-y-auto space-y-8 shadow-2xl flex flex-col justify-start">
+        {/* ---- 1. Filters ---- */}
         <section>
-          <h3 className="font-pixel text-[#8198ed] text-sm sm:text-base mb-2.5">Filters</h3>
-          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+          <h3 className="font-pixel text-[#5b7fcb] text-xl sm:text-2xl tracking-wider mb-4 select-none">
+            Filters
+          </h3>
+          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2.5 sm:gap-3">
             {FILTERS.map((f) => (
-              <button key={f.id} onClick={() => setFilter(f.id)} className="group text-left">
+              <button
+                key={f.id}
+                onClick={() => setFilter(f.id)}
+                className="flex flex-col items-center group cursor-pointer text-left"
+              >
                 <div
-                  className={`relative aspect-square overflow-hidden bg-[#cdd6f0] rounded-md border-2 transition-all ${
-                    filter === f.id ? 'border-[#8198ed] shadow-sm scale-[1.02]' : 'border-transparent hover:border-[#a8b8e0]'
+                  className={`relative w-full aspect-square overflow-hidden bg-[#1e2337] rounded-lg transition-all ${
+                    filter === f.id
+                      ? 'ring-3 ring-[#8198ed] shadow-md scale-105'
+                      : 'hover:scale-105 opacity-90 hover:opacity-100'
                   }`}
                 >
                   {frames[0] && (
@@ -217,89 +355,252 @@ export default function Editor({ frames, template, onRetake }: Props) {
                     />
                   )}
                   {filter === f.id && (
-                    <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-[#8198ed] text-white grid place-items-center text-[9px] font-bold">
+                    <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-[#5b7fcb] text-white grid place-items-center text-[9px] font-bold shadow">
                       ✓
                     </span>
                   )}
                 </div>
-                <p className="font-pixel text-[7px] text-[#8792c4] text-center mt-1 truncate">{f.label}</p>
+                <p className="font-pixel text-[6px] sm:text-[7px] text-[#5b7fcb] text-center mt-1.5 truncate w-full group-hover:text-[#4162b8]">
+                  {f.label}
+                </p>
               </button>
             ))}
           </div>
         </section>
 
-        {/* Background */}
+        {/* ---- 2. Background ---- */}
         <section>
-          <h3 className="font-pixel text-[#8198ed] text-sm sm:text-base mb-2.5">Background</h3>
-          <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-thin">
-            {BACKGROUNDS.map((b) => (
+          <h3 className="font-pixel text-[#5b7fcb] text-xl sm:text-2xl tracking-wider mb-4 select-none">
+            Background
+          </h3>
+          <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-thin">
+            {/* None Option */}
+            <button
+              onClick={() => setBg(BACKGROUNDS[0])}
+              className={`shrink-0 size-20 sm:size-24 rounded-xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex items-center justify-center transition-all cursor-pointer ${
+                bg.id === 'none' ? 'ring-3 ring-[#ff80a0] shadow-md scale-105' : 'hover:scale-105'
+              }`}
+            >
+              <span className="text-[#ff5c8a] text-2xl font-bold font-mono">✕</span>
+            </button>
+
+            {/* Pattern/Frame image backgrounds */}
+            {BACKGROUNDS.filter((b) => b.kind === 'image' && b.url).map((b) => (
               <button
                 key={b.id}
                 onClick={() => setBg(b)}
-                className={`shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-md overflow-hidden border-2 grid place-items-center bg-white transition-all ${
-                  bg.id === b.id ? 'border-[#8198ed] ring-2 ring-[#8198ed]/30 shadow-sm' : 'border-[#a8b8e0] hover:border-[#8198ed]'
+                className={`shrink-0 size-20 sm:size-24 rounded-xl overflow-hidden border-2 bg-white transition-all cursor-pointer ${
+                  bg.id === b.id
+                    ? 'border-[#8198ed] ring-3 ring-[#8198ed]/50 shadow-md scale-105'
+                    : 'border-[#cdd6f0] hover:scale-105'
                 }`}
               >
-                {b.kind === 'none' && <span className="text-[#e79] text-xl font-bold">✕</span>}
-                {b.kind === 'image' && b.url && <img src={b.url} alt="" className="w-full h-full object-cover" />}
+                <img src={b.url} alt="" className="w-full h-full object-cover" />
               </button>
             ))}
           </div>
         </section>
 
-        {/* Stickers */}
+        {/* ---- 3. Stickers ---- */}
         <section>
-          <h3 className="font-pixel text-[#8198ed] text-sm sm:text-base mb-2.5">Stickers</h3>
-          <div className="flex flex-wrap gap-2">
+          <h3 className="font-pixel text-[#5b7fcb] text-xl sm:text-2xl tracking-wider mb-4 select-none">
+            Stickers
+          </h3>
+          <div className="grid grid-cols-5 gap-3 sm:gap-4 max-w-[620px]">
+            {/* Clear All Stickers Button */}
             <button
-              onClick={() => {
-                setStickers([])
-                setSelected(null)
-              }}
-              className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg grid place-items-center bg-[#fdeef0] border-2 border-[#f4c6cf] text-[#e79] text-xl font-bold hover:bg-[#fcdde2]"
-              title="Clear stickers"
+              onClick={() => setStickers([])}
+              className="size-20 sm:size-24 rounded-xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex items-center justify-center transition-all cursor-pointer hover:scale-105"
+              title="Clear all stickers"
             >
-              ✕
+              <span className="text-[#ff5c8a] text-2xl font-bold font-mono">✕</span>
             </button>
+
+            {/* Stickers List */}
             {STICKERS.map((s) => {
-              const active = stickers.some((st) => st.src === s.src)
+              const isPlaced = stickers.some((st) => st.src === s.src)
               return (
                 <button
                   key={s.id}
                   onClick={() => toggleSticker(s.src)}
-                  title={s.label}
-                  className={`w-12 h-12 sm:w-14 sm:h-14 rounded-lg grid place-items-center bg-[#eef2ff] border-2 transition-all p-1.5 ${
-                    active ? 'border-[#8198ed] bg-[#d4dcf7] shadow-sm' : 'border-transparent hover:border-[#8198ed]'
+                  className={`size-20 sm:size-24 rounded-xl bg-[#e8eeff] hover:bg-white border-2 flex items-center justify-center p-3 transition-all cursor-pointer ${
+                    isPlaced
+                      ? 'border-[#8198ed] ring-3 ring-[#8198ed]/50 shadow-md scale-105'
+                      : 'border-transparent hover:border-[#8198ed] hover:scale-105'
                   }`}
                 >
-                  <img src={s.src} alt={s.label} className="w-full h-full object-contain pointer-events-none" />
+                  <img
+                    src={s.src}
+                    alt={s.label}
+                    className="max-h-full max-w-full object-contain pointer-events-none"
+                  />
                 </button>
               )
             })}
           </div>
         </section>
 
-        {/* Translation */}
+        {/* ---- 4. Translation & Custom Text ---- */}
         <section>
-          <h3 className="font-pixel text-[#8198ed] text-sm sm:text-base mb-2.5">Translation</h3>
-          <div className="grid grid-cols-2 gap-2.5 max-w-lg">
-            {LOGOS.map((l) => (
+          <h3 className="font-pixel text-[#5b7fcb] text-xl sm:text-2xl tracking-wider mb-4 select-none">
+            Translation & Text
+          </h3>
+          <div className="flex flex-col gap-3.5 max-w-[560px]">
+            {/* Custom Text Input Bar */}
+            <div className="flex gap-2 w-full">
+              <input
+                type="text"
+                placeholder="Write custom text (or leave blank)..."
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+                className="flex-1 bg-white border border-[#cdd6f0] focus:border-[#8198ed] focus:ring-2 focus:ring-[#8198ed]/30 px-3.5 py-2.5 rounded-xl font-mono text-xs text-[#334155] outline-none shadow-xs"
+              />
               <button
-                key={l.id}
-                onClick={() => setLogo(l.id)}
-                className={`py-2.5 px-3 rounded-lg border-2 text-center transition-all ${
-                  logo === l.id
-                    ? 'bg-[#8198ed] text-white border-[#5b6fbc] shadow-sm'
-                    : 'bg-[#eef2ff] text-[#8792c4] border-transparent hover:border-[#a8b8e0]'
-                }`}
-                style={{ fontFamily: l.id === 'en' ? "'Press Start 2P', monospace" : "'Noto Sans JP', sans-serif" }}
+                type="button"
+                onClick={() => setCustomText('')}
+                className="btn95 !px-3 !py-2 text-[10px] font-bold text-[#ff5c8a] shrink-0"
+                title="Clear text (Blank Polaroid)"
               >
-                <span className="text-xs sm:text-sm font-bold">{l.label}</span>
+                ✕ Blank
               </button>
-            ))}
+            </div>
+
+            {/* Text Color Swatches */}
+            <div className="flex flex-col gap-1.5">
+              <span className="font-pixel text-[9px] text-[#5b7fcb] tracking-wider">Text Color:</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                {TEXT_COLORS.map((tc) => (
+                  <button
+                    key={tc.id}
+                    onClick={() => setTextColor(tc.color)}
+                    title={tc.label}
+                    className={`size-7 sm:size-8 rounded-full border-2 transition-transform cursor-pointer shadow-xs ${
+                      textColor.toLowerCase() === tc.color.toLowerCase()
+                        ? 'border-[#5b7fcb] scale-110 ring-2 ring-[#8198ed]'
+                        : 'border-slate-300 hover:scale-105'
+                    }`}
+                    style={{ backgroundColor: tc.color }}
+                  />
+                ))}
+                {/* Custom Color Input */}
+                <label
+                  title="Custom Color"
+                  className="size-7 sm:size-8 rounded-full border-2 border-dashed border-[#8198ed] grid place-items-center cursor-pointer hover:scale-105 bg-white shadow-xs text-xs overflow-hidden"
+                >
+                  <span className="text-[10px]">🎨</span>
+                  <input
+                    type="color"
+                    value={textColor}
+                    onChange={(e) => setTextColor(e.target.value)}
+                    className="opacity-0 absolute size-0"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Language / Logo Quick Presets */}
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              {LOGOS.map((l) => (
+                <button
+                  key={l.id}
+                  onClick={() => {
+                    setLogo(l.id)
+                    setCustomText(l.text)
+                  }}
+                  className={`py-3 px-3 rounded-xl font-pixel text-xs tracking-wider transition-all cursor-pointer shadow-md select-none text-center truncate ${
+                    customText === l.text
+                      ? 'bg-[#8198ed] text-white shadow-[0_3px_0_#5b6fbc]'
+                      : 'bg-[#b3c1ff] text-white hover:bg-[#a1b2ff] shadow-[0_3px_0_#8198ed]'
+                  }`}
+                >
+                  {l.text}
+                </button>
+              ))}
+            </div>
           </div>
         </section>
       </div>
+
+      {/* ================= Scan to Download Modal ================= */}
+      {showShare && (
+        <div className="fixed inset-0 z-50 bg-black/35 backdrop-blur-[2px] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl p-6 sm:p-9 shadow-2xl max-w-sm sm:max-w-md w-full flex flex-col items-center text-center relative border border-slate-100">
+            {/* Close Button */}
+            <button
+              onClick={() => setShowShare(false)}
+              className="absolute top-4 right-4 size-8 rounded-lg bg-[#e8eeff] hover:bg-[#d8e4ff] text-[#5b7fcb] font-bold text-sm flex items-center justify-center cursor-pointer transition-colors"
+            >
+              ✕
+            </button>
+
+            {/* Title */}
+            <h3 className="font-pixel text-[#5b7fcb] text-sm sm:text-base tracking-wider mb-6 mt-1 select-none">
+              Scan to Download
+            </h3>
+
+            {/* QR Content / Spinner */}
+            {qrLoading ? (
+              <div className="flex flex-col items-center justify-center my-10 py-6">
+                <div className="w-12 h-12 border-4 border-[#8198ed]/30 border-t-[#8198ed] rounded-full animate-spin mb-4"></div>
+                <p className="font-pixel text-[10px] text-[#8792c4] tracking-wider animate-pulse">
+                  Uploading softcopy...
+                </p>
+              </div>
+            ) : qrDataUrl ? (
+              <div className="flex flex-col items-center w-full">
+                <div className="p-3 bg-white rounded-2xl shadow-inner border border-[#dce3f8] mb-4">
+                  <img
+                    src={qrDataUrl}
+                    alt="QR Code"
+                    className="size-48 sm:size-56 object-contain rounded-lg"
+                  />
+                </div>
+                <p className="font-pixel text-[10px] sm:text-xs text-[#5b7fcb] mb-4 tracking-wider select-none">
+                  Scan with your phone camera to save!
+                </p>
+
+                {/* Direct Action Buttons */}
+                <div className="flex flex-col gap-2 w-full pt-1">
+                  {hostedUrl ? (
+                    <div className="flex gap-1.5 w-full">
+                      <input
+                        readOnly
+                        value={hostedUrl}
+                        className="flex-1 bg-[#f8fafc] border border-slate-200 px-3 py-2 font-mono text-[10px] outline-none truncate rounded-lg text-slate-600 select-all"
+                      />
+                      <button
+                        className="btn95 is-primary !px-3 !py-2 text-[10px] font-bold"
+                        onClick={copyLink}
+                      >
+                        {copied ? '✓ Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={download}
+                      className="btn95 is-primary !px-4 !py-2.5 text-xs font-bold w-full"
+                    >
+                      💾 Download High-Res PNG
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="my-6 flex flex-col items-center gap-3">
+                <p className="text-[#5b7fcb] font-pixel text-[10px]">Ready to save your photos!</p>
+                <button
+                  type="button"
+                  onClick={download}
+                  className="btn95 is-primary !px-5 !py-2.5 text-xs font-bold"
+                >
+                  💾 Save to Device
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
