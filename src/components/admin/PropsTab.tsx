@@ -139,6 +139,53 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
     await loadData()
   }
 
+  const faceStageRef = useRef<HTMLDivElement | null>(null)
+  const isDraggingProp = useRef(false)
+  const dragStartY = useRef(0)
+  const initialOffsetY = useRef(0)
+
+  const getBaselineTopPct = (a: PropAnchor) => {
+    if (a === 'forehead') return 28
+    if (a === 'eyes') return 45
+    if (a === 'nose') return 58
+    return 42
+  }
+
+  const handlePropPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation()
+    isDraggingProp.current = true
+    dragStartY.current = e.clientY
+    initialOffsetY.current = offsetY
+    try {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch {}
+  }
+
+  const handleStagePointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingProp.current || !faceStageRef.current) return
+    const stageRect = faceStageRef.current.getBoundingClientRect()
+    if (!stageRect.height) return
+
+    const dy = e.clientY - dragStartY.current
+    const deltaOffset = dy / stageRect.height
+    const nextOffset = Math.min(
+      0.45,
+      Math.max(-0.45, Number((initialOffsetY.current + deltaOffset).toFixed(2)))
+    )
+    setOffsetY(nextOffset)
+  }
+
+  const handleStagePointerUp = () => {
+    isDraggingProp.current = false
+  }
+
+  const handlePropWheel = (e: React.WheelEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const delta = -e.deltaY * 0.0015
+    setScaleFactor((s) => Math.min(2.5, Math.max(0.5, Number((s + delta).toFixed(2)))))
+  }
+
   // Calculate live AR simulation position on the mannequin face
   const getSimulatedPropStyle = () => {
     // Mannequin center is at (50%, 50%)
@@ -557,10 +604,16 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
                   </button>
                 </div>
 
-                {/* Stylized Face Stage Box */}
-                <div className="relative w-full aspect-[4/5] max-h-[380px] bg-gradient-to-b from-[#eef2ff] to-[#dbe4ff] rounded-xl overflow-hidden flex items-center justify-center border-2 border-slate-200 shadow-inner select-none">
+                {/* Stylized Face Stage Box with Drag & Wheel Interaction */}
+                <div
+                  ref={faceStageRef}
+                  onPointerMove={handleStagePointerMove}
+                  onPointerUp={handleStagePointerUp}
+                  onPointerLeave={handleStagePointerUp}
+                  className="relative w-full aspect-[4/5] max-h-[380px] bg-gradient-to-b from-[#eef2ff] to-[#dbe4ff] rounded-xl overflow-hidden flex items-center justify-center border-2 border-slate-200 shadow-inner select-none cursor-default"
+                >
                   {/* Stylized Mannequin Head Silhouette */}
-                  <div className="relative w-[210px] h-[270px] flex items-center justify-center">
+                  <div className="relative w-[210px] h-[270px] flex items-center justify-center pointer-events-none">
                     {/* Head / Face Oval */}
                     <div className="absolute inset-0 bg-[#fce7d2] rounded-[50%_50%_46%_46%] border-3 border-[#e2b992] shadow-md flex flex-col items-center">
                       {/* Hair Silhouette Top */}
@@ -641,26 +694,32 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
                         </div>
                       </div>
                     )}
-
-                    {/* Live AR Overlay of the Uploaded Prop */}
-                    {previewSrc && (
-                      <div
-                        className="absolute pointer-events-none transition-all duration-75 flex items-center justify-center"
-                        style={getSimulatedPropStyle()}
-                      >
-                        <img
-                          src={previewSrc}
-                          alt="Prop Fit Preview"
-                          className="w-full h-auto object-contain drop-shadow-[0_4px_8px_rgba(0,0,0,0.35)]"
-                        />
-                      </div>
-                    )}
                   </div>
+
+                  {/* Interactive Draggable Live AR Overlay of the Uploaded Prop */}
+                  {previewSrc && (
+                    <div
+                      onPointerDown={handlePropPointerDown}
+                      onWheel={handlePropWheel}
+                      className="absolute z-20 cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-[#8198ed] rounded-lg p-1 transition-shadow duration-75 flex items-center justify-center group"
+                      style={getSimulatedPropStyle()}
+                      title="Click & drag to position • Scroll wheel to resize"
+                    >
+                      <img
+                        src={previewSrc}
+                        alt="Prop Fit Preview"
+                        className="w-full h-auto object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.4)] pointer-events-none"
+                      />
+                      <div className="absolute -top-5 bg-[#5b7fcb] text-white text-[8px] font-pixel px-1.5 py-0.5 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                        Drag to adjust position
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <p className="text-[10px] text-slate-500 font-mono mt-3 text-center">
                   {previewSrc
-                    ? 'Adjust Vertical Offset & Scale sliders to fit prop onto the face model'
+                    ? '💡 Drag the prop on the face to adjust position • Scroll wheel or sliders to resize'
                     : 'Upload a PNG sprite to preview real-time face tracking positioning'}
                 </p>
               </div>
