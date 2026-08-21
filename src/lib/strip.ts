@@ -66,13 +66,13 @@ export const countFor = (t: Template) => (t ? t.cols * t.rows : 0)
 /* ---------------- Logo language (Translation buttons) ---------------- */
 export type LogoLang = 'en' | 'zh' | 'ko' | 'ja' | 'tl'
 export const LOGOS: { id: LogoLang; label: string; text: string }[] = [
-  { id: 'en', label: 'OmoideCam', text: 'OmoideCam' },
+  { id: 'en', label: 'IT GUILD', text: 'IT GUILD' },
   { id: 'zh', label: '思忆相机', text: '思忆相机' },
   { id: 'ko', label: '오모이드캠', text: '오모이드캠' },
   { id: 'ja', label: 'おもいでカメラ', text: 'おもいでカメラ' },
   { id: 'tl', label: 'ᜂᜋᜓᜁᜇᜒᜃ᜔ᜀᜋ᜔', text: 'ᜂᜋᜓᜁᜇᜒᜃ᜔ᜀᜋ᜔' },
 ]
-export const logoText = (id: LogoLang) => LOGOS.find((l) => l.id === id)?.text ?? 'OmoideCam'
+export const logoText = (id: LogoLang) => LOGOS.find((l) => l.id === id)?.text ?? 'IT GUILD'
 
 /* ---------------- Text Colors ---------------- */
 export const TEXT_COLORS = [

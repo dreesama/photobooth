@@ -106,7 +106,7 @@ export default function Desktop({
       </div>
 
       <div className="content-layer">
-        <h1 className="title">OmoideCam</h1>
+        <h1 className="title">IT GUILD</h1>
 
         {/* stacked windows + start button */}
         <div className="windows-wrapper">
@@ -161,23 +161,21 @@ export default function Desktop({
             </div>
             <div className="desc-body">
               <p className="desc-headline">
-                OmoideCam — capture the moment, keep the memory.
+                IT GUILD — capture the moment, keep the memory.
               </p>
               <p className="desc-text">
-                OmoideCam is a free, browser-based photobooth web app that lets you create
+                IT GUILD is a modern, retro-styled photobooth web application that lets you create
                 beautiful photo strips with friends, solo, or anywhere you have a camera.
-                Inspired by the charm of Japanese purikura booths, OmoideCam brings that fun
-                and creative experience straight to your browser — no app download, no sign-up
-                needed.
+                Experience the charm of classic photobooths straight from your browser.
               </p>
               <p className="desc-text">
                 Snap photos or upload your own, choose your layout, dress up your strip with
                 filters, stickers, and frames, and walk away with a personalized memory you
-                can save instantly. With smart expression detection, countdown timers, and
-                multilingual logo options, every photo strip feels uniquely yours.
+                can save instantly. With smart face props, countdown timers, and
+                custom text options, every photo strip feels uniquely yours.
               </p>
               <p className="desc-footer">
-                Omoide (思い出) means "memory" in Japanese.
+                Presented by IT GUILD.
               </p>
             </div>
           </section>

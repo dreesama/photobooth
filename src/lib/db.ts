@@ -50,8 +50,8 @@ export type EventSettings = {
 }
 
 export const DEFAULT_SETTINGS: EventSettings = {
-  eventName: 'OmoideCam Event',
-  customWatermark: 'OmoideCam',
+  eventName: 'IT GUILD Event',
+  customWatermark: 'IT GUILD',
   subWatermark: 'PHOTOBOOTH',
   autoSaveToArchive: true,
   defaultTimer: 3,

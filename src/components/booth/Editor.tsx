@@ -28,7 +28,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
   const [bg, setBg] = useState<Background>(BACKGROUNDS[0])
   const [frameColor] = useState('#ffffff')
   const [logo, setLogo] = useState<LogoLang>('en')
-  const [customText, setCustomText] = useState<string>('OmoideCam')
+  const [customText, setCustomText] = useState<string>('IT GUILD')
   const [textColor, setTextColor] = useState<string>('#5b7fcb')
   const [stickers, setStickers] = useState<PlacedSticker[]>([])
   const [selected, setSelected] = useState<string | null>(null)
@@ -159,7 +159,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
     const stripDataUrl = c.toDataURL('image/png')
     const a = document.createElement('a')
     a.href = stripDataUrl
-    a.download = `omoidecam-${Date.now()}.png`
+    a.download = `itguild-${Date.now()}.png`
     a.click()
 
     try {

@@ -57,7 +57,7 @@ export default function SettingsTab({ onSettingsChange }: { onSettingsChange?: (
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `omoidecam-backup-${new Date().toISOString().slice(0, 10)}.json`
+      a.download = `itguild-backup-${new Date().toISOString().slice(0, 10)}.json`
       a.click()
       URL.revokeObjectURL(url)
     } finally {
@@ -140,11 +140,11 @@ export default function SettingsTab({ onSettingsChange }: { onSettingsChange?: (
                 type="text"
                 value={settings.customWatermark}
                 onChange={(e) => setSettings({ ...settings, customWatermark: e.target.value })}
-                placeholder="OmoideCam"
+                placeholder="IT GUILD"
                 className="w-full bg-[#f8fafc] bevel-in px-3 py-2 text-xs font-mono outline-none rounded"
               />
               <p className="font-sans text-[10px] text-slate-400 mt-1">
-                Appears at the bottom chin of every photo strip (e.g. "Sarah & Alex 2026", "OmoideCam").
+                Appears at the bottom chin of every photo strip (e.g. "IT GUILD", "Tech Summit 2026").
               </p>
             </div>
           </div>

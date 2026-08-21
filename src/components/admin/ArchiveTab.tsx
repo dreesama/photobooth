@@ -161,7 +161,7 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
       if (isStory) {
         ctx.fillStyle = '#5b7fcb'
         ctx.font = '36px "Press Start 2P", monospace'
-        ctx.fillText('OmoideCam', w / 2, 160)
+        ctx.fillText('IT GUILD', w / 2, 160)
         ctx.fillStyle = '#8198ed'
         ctx.font = '18px "Press Start 2P", monospace'
         ctx.fillText('PHOTOBOOTH MOMENT', w / 2, 210)
@@ -594,7 +594,7 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
 
                   <a
                     href={socialDataUrl}
-                    download={`omoide-post-${socialFormat}-${Date.now()}.png`}
+                    download={`itguild-post-${socialFormat}-${Date.now()}.png`}
                     className="btn95 is-primary !px-5 !py-2 text-xs font-bold"
                   >
                     💾 Download Social Post

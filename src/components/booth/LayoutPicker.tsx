@@ -61,7 +61,7 @@ export default function LayoutPicker({ onConfirm, onBack }: Props) {
 
               {/* Strip bottom watermark */}
               <p className="font-pixel text-[6px] sm:text-[8px] text-[#8198ed] text-center mt-2.5 sm:mt-3 tracking-widest opacity-85">
-                OmoideCam
+                IT GUILD
               </p>
             </div>
 

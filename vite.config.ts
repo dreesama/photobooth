@@ -84,7 +84,7 @@ function figmaSiteConfiguration(config: FigmaSiteConfiguration): Plugin {
     return html.replace(`<!-- ${slotName} -->`, content)
   }
 
-  const title = config.title ?? "Figma Make App"
+  const title = config.title ?? "IT GUILD Photobooth"
   const description = config.description ?? ''
   const favicon = config.icons?.icon ?? ''
   const socialImage = config.openGraph?.image ?? ''
@@ -457,7 +457,7 @@ function cloudUploadPlugin(): Plugin {
       const buffer = photoCache.get(id)
       if (buffer) {
         res.setHeader('Content-Type', 'image/png')
-        res.setHeader('Content-Disposition', `attachment; filename="omoidecam-${id}.png"`)
+        res.setHeader('Content-Disposition', `attachment; filename="itguild-${id}.png"`)
         res.end(buffer)
       } else {
         res.statusCode = 404
@@ -477,7 +477,7 @@ function cloudUploadPlugin(): Plugin {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OmoideCam - Photo Not Found</title>
+  <title>IT GUILD - Photo Not Found</title>
   <style>
     body { background: #eaf4ff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; text-align: center; color: #5b7fcb; }
     .box { background: white; padding: 32px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); max-width: 320px; }
@@ -501,7 +501,7 @@ function cloudUploadPlugin(): Plugin {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>OmoideCam - Your Photo</title>
+  <title>IT GUILD - Your Photo</title>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Nunito:wght@700;800&display=swap" rel="stylesheet" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -569,7 +569,7 @@ function cloudUploadPlugin(): Plugin {
 <body>
   <div class="card">
     <img src="${rawImgUrl}" alt="Your Photobooth Strip" class="photo-img" />
-    <a href="${downloadUrl}" download="omoidecam-photo.png" class="btn">
+    <a href="${downloadUrl}" download="itguild-photo.png" class="btn">
       <span>💾</span>
       <span>Save to Phone</span>
     </a>

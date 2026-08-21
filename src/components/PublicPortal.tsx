@@ -30,7 +30,7 @@ export default function PublicPortal() {
             textShadow: '0 2px 0 #9cb6ec, 0 4px 10px rgba(91,127,203,0.25)',
           }}
         >
-          OmoideCam
+          IT GUILD
         </h1>
         <p className="font-pixel text-[10px] sm:text-xs text-[#8792c4] tracking-widest uppercase mb-6">
           Photo Delivery Hub

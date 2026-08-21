@@ -69,7 +69,7 @@ export default function AdminDashboard({ onExit, onStartBooth }: Props) {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-pixel text-base sm:text-lg text-[#5b7fcb]">
-                  OmoideCam Admin Studio
+                  IT GUILD Admin Studio
                 </h1>
                 <span className="bg-[#8198ed] text-white text-[8px] font-pixel px-1.5 py-0.5 rounded shadow-sm">
                   OPERATOR
