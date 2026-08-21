@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Camera, Lock } from 'lucide-react'
 
 export default function PublicPortal() {
   const [photoCode, setPhotoCode] = useState('')
@@ -20,7 +21,7 @@ export default function PublicPortal() {
       <div className="max-w-md w-full bg-white rounded-2xl p-8 sm:p-10 shadow-[0_20px_50px_rgba(91,127,203,0.3)] border border-white/80 text-center flex flex-col items-center">
         {/* Retro Logo Icon */}
         <div className="w-16 h-16 rounded-2xl bg-[#8198ed] text-white flex items-center justify-center text-3xl shadow-[0_6px_0_#5b6fbc] mb-5">
-          📷
+          <Camera className="w-8 h-8 text-white" />
         </div>
 
         {/* Title */}
@@ -73,9 +74,10 @@ export default function PublicPortal() {
         </form>
 
         {/* Footer Notice */}
-        <div className="mt-8 pt-4 border-t border-slate-100 w-full flex items-center justify-center">
-          <p className="font-pixel text-[8px] text-[#8792c4] tracking-wider">
-            🔒 Photobooth Terminal: Local Kiosk Only
+        <div className="mt-8 pt-4 border-t border-slate-100 w-full flex items-center justify-center gap-1.5 text-[#8792c4]">
+          <Lock className="w-3 h-3" />
+          <p className="font-pixel text-[8px] tracking-wider">
+            Photobooth Terminal: Local Kiosk Only
           </p>
         </div>
       </div>

@@ -1,4 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Ban,
+  Timer,
+  ChevronDown,
+  Smile,
+  UserCheck,
+  ArrowLeft,
+  Camera,
+  RotateCcw,
+  Check,
+} from 'lucide-react'
 import { useCamera } from '../../hooks/useCamera'
 import { useFaceLandmarker } from '../../hooks/useFaceLandmarker'
 import { countFor, type Template } from '../../lib/strip'
@@ -211,7 +222,7 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
             {p.src ? (
               <img src={p.src} alt={p.label} className="size-10 sm:size-11 object-contain pointer-events-none" />
             ) : (
-              <span className="text-[#ff5c8a] text-xl font-bold font-mono">✕</span>
+              <Ban className="w-6 h-6 text-rose-400" />
             )}
           </button>
         ))}
@@ -228,6 +239,9 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
             className="w-full h-full object-cover -scale-x-100"
           />
 
+          {/* Flash & Countdowns */}
+          {flash && <div className="absolute inset-0 bg-white z-40 animate-out fade-out duration-300" />}
+
           {/* Tracked Wearable Prop */}
           {prop.src && (
             <img
@@ -237,9 +251,6 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
               style={propStyle}
             />
           )}
-
-          {/* Flash Effect */}
-          {flash && <div className="absolute inset-0 bg-white flash pointer-events-none" />}
 
           {/* Countdown Display */}
           {count !== null && (
@@ -268,8 +279,9 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
               onClick={() => setShowTimerMenu((v) => !v)}
               className="font-pixel text-[10px] text-[#5b7fcb] bg-white/90 hover:bg-white backdrop-blur-xs px-3 py-1.5 rounded-lg shadow-md flex items-center gap-1.5 cursor-pointer"
             >
-              <span>⏱ {seconds}s</span>
-              <span className="text-[8px]">▼</span>
+              <Timer className="w-3.5 h-3.5 text-[#5b7fcb]" />
+              <span>{seconds}s</span>
+              <ChevronDown className="w-3 h-3 text-slate-400" />
             </button>
             {showTimerMenu && (
               <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl p-1.5 flex flex-col gap-1 border border-slate-200 z-30">
@@ -295,8 +307,18 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
           {/* Top Right Status & Shot Counter Badge */}
           <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
             {metrics.hasFace && (
-              <span className="font-pixel text-[9px] text-[#5b7fcb] bg-white/90 backdrop-blur-xs px-2.5 py-1 rounded-lg shadow-md">
-                {metrics.expression === 'smile' ? '😊 Smile!' : '👤 Face Locked'}
+              <span className="font-pixel text-[9px] text-[#5b7fcb] bg-white/90 backdrop-blur-xs px-2.5 py-1 rounded-lg shadow-md flex items-center gap-1.5">
+                {metrics.expression === 'smile' ? (
+                  <>
+                    <Smile className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Smile!</span>
+                  </>
+                ) : (
+                  <>
+                    <UserCheck className="w-3.5 h-3.5 text-[#5b7fcb]" />
+                    <span>Face Locked</span>
+                  </>
+                )}
               </span>
             )}
             <span className="font-pixel text-[10px] text-white bg-black/60 backdrop-blur-xs px-3 py-1 rounded-lg shadow-md border border-white/30 font-bold">
@@ -359,9 +381,10 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
           <button
             type="button"
             onClick={onBack}
-            className="bg-[#9cb2f8] hover:bg-[#8ca8f5] active:translate-y-0.5 text-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg font-pixel text-xs tracking-wider shadow-[3px_3px_0px_#7088bc] transition-all cursor-pointer select-none"
+            className="bg-[#9cb2f8] hover:bg-[#8ca8f5] active:translate-y-0.5 text-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg font-pixel text-xs tracking-wider shadow-[3px_3px_0px_#7088bc] transition-all cursor-pointer select-none flex items-center gap-1.5"
           >
-            ← Back
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back</span>
           </button>
         </div>
 
@@ -371,9 +394,10 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
             type="button"
             disabled={status !== 'live' || shooting}
             onClick={runSequence}
-            className="bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white px-8 sm:px-12 py-2.5 sm:py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#5b6fbc] transition-all cursor-pointer select-none font-bold disabled:opacity-50"
+            className="bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white px-8 sm:px-12 py-2.5 sm:py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#5b6fbc] transition-all cursor-pointer select-none font-bold disabled:opacity-50 flex items-center gap-2"
           >
-            {shooting ? 'Capturing…' : 'Start'}
+            <Camera className="w-4 h-4" />
+            <span>{shooting ? 'Capturing…' : 'Start'}</span>
           </button>
         </div>
 
@@ -383,9 +407,10 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
             type="button"
             disabled={shooting || shots.length === 0}
             onClick={() => setShots([])}
-            className="bg-[#9cb2f8] hover:bg-[#8ca8f5] active:translate-y-0.5 text-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg font-pixel text-xs tracking-wider shadow-[3px_3px_0px_#7088bc] transition-all cursor-pointer select-none disabled:opacity-50"
+            className="bg-[#9cb2f8] hover:bg-[#8ca8f5] active:translate-y-0.5 text-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg font-pixel text-xs tracking-wider shadow-[3px_3px_0px_#7088bc] transition-all cursor-pointer select-none disabled:opacity-50 flex items-center gap-1.5"
           >
-            Retake
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Retake</span>
           </button>
         </div>
 
@@ -395,9 +420,10 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
             type="button"
             disabled={!done || shooting}
             onClick={() => onConfirm(shots)}
-            className="bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white px-6 sm:px-8 py-2.5 sm:py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#5b6fbc] transition-all cursor-pointer select-none font-bold disabled:opacity-50"
+            className="bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white px-6 sm:px-8 py-2.5 sm:py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#5b6fbc] transition-all cursor-pointer select-none font-bold disabled:opacity-50 flex items-center gap-1.5"
           >
-            Confirm ›
+            <span>Confirm</span>
+            <Check className="w-4 h-4" />
           </button>
         </div>
       </div>

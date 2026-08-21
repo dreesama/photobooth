@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Settings, RotateCcw } from 'lucide-react'
 import Window from '../Window'
 import LayoutPicker from './LayoutPicker'
 import CameraStage from './CameraStage'
@@ -80,7 +81,7 @@ export default function Booth({
             title="Open Admin Studio"
             className="btn95 !px-2.5 !py-1 text-[9px] font-bold flex items-center gap-1 shadow-md bg-white/90"
           >
-            <span>⚙️</span>
+            <Settings className="w-3 h-3 text-[#5b7fcb]" />
             <span className="hidden sm:inline">Admin</span>
           </button>
         </div>
@@ -89,7 +90,7 @@ export default function Booth({
       {/* Session Restored Toast Notification */}
       {recoveredToast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-[#8198ed] text-white font-pixel text-xs px-4 py-2 rounded-xl shadow-xl border-2 border-white animate-in slide-in-from-top duration-300 flex items-center gap-2">
-          <span>↺</span>
+          <RotateCcw className="w-3.5 h-3.5" />
           <span>Previous session photos restored!</span>
         </div>
       )}

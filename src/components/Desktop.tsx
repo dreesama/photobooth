@@ -1,3 +1,4 @@
+import { Settings, Camera } from 'lucide-react'
 import cloudSm from '../imports/OmoideCam-1/a5297066793ce425e47c5535863011b0d63c1594.png'
 import cloudLg from '../imports/OmoideCam-1/59343e2bf6815009d23cfab35900d0abce742df8.png'
 import star from '../imports/OmoideCam-1/83a28b65ed5df81d400d62d4107b713a5027c51b.png'
@@ -44,10 +45,10 @@ const STEPS = [
   ['Step 1', 'Choose your photo source', 'Before you begin, decide how you want to add photos to your strip. You can either take photos live using your camera or upload photos directly from your device.'],
   ['Step 2', 'Pick a layout', 'Select how many photos your strip will have — choose between a 2, 3, or 4-panel layout depending on how many shots you want in your memory strip.'],
   ['Step 3', 'Set up your shot', 'Customize your shooting experience. Toggle Expression Detector on or off, then choose your preferred countdown duration so you have enough time to strike a pose.'],
-  ['Step 4', 'Strike a pose!', 'Press Space to start the countdown. Once it hits zero, smile! OmoideCam will automatically snap your photo. Repeat for each panel in your chosen layout.'],
+  ['Step 4', 'Strike a pose!', 'Press Space to start the countdown. Once it hits zero, smile! IT GUILD will automatically snap your photo. Repeat for each panel in your chosen layout.'],
   ['Step 5', 'Confirm or retake', 'Once all your shots are taken, review your photos. Happy with them? Hit Confirm to edit. Not feeling it? Hit Retake to try again.'],
   ['Step 6', 'Customize your strip', 'Add a frame background color or pattern, apply filters like vintage, B&W, sepia, or neon, and decorate with stickers like hats, glasses, and speech bubbles.'],
-  ['Step 7', 'Choose your logo language', 'Pick how the OmoideCam logo appears on your strip: English, Korean (오모이데캠), Chinese (回忆相机), or Japanese (思い出カム).'],
+  ['Step 7', 'Choose your logo language', 'Pick how the IT GUILD logo appears on your strip: English, Korean (오모이데캠), Chinese (回忆相机), or Japanese (思い出カム).'],
   ['Step 8', 'Save your memory', 'Download your finished photo strip directly to your device or scan the QR code to save it instantly to your phone. Your memory is ready to keep and share!'],
 ]
 
@@ -78,7 +79,7 @@ export default function Desktop({
             title="Open Admin Studio (Ctrl+Shift+A)"
             className="btn95 !px-3 sm:!px-4 !py-1.5 text-[9px] sm:text-xs font-bold flex items-center gap-1.5 shadow-md bg-white/90 backdrop-blur-xs"
           >
-            <span>⚙️</span>
+            <Settings className="w-3.5 h-3.5 text-[#5b7fcb]" />
             <span className="hidden sm:inline">Admin Studio</span>
             <span className="sm:hidden">Admin</span>
           </button>
@@ -140,7 +141,7 @@ export default function Desktop({
 
               <div className="start-btn-portal">
                 <button className="start-btn" onClick={onStart}>
-                  <span className="start-icon" aria-hidden>📷</span>
+                  <Camera className="w-5 h-5 mr-1" />
                   <span>Start</span>
                 </button>
               </div>

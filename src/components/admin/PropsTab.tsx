@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import {
+  Plus,
+  Eye,
+  EyeOff,
+  Trash2,
+  Sparkles,
+  Image as ImageIcon,
+  X,
+} from 'lucide-react'
+import {
   getCustomProps,
   saveCustomProp,
   deleteCustomProp,
@@ -7,7 +16,7 @@ import {
   toggleHideAsset,
   type CustomProp,
 } from '../../lib/db'
-import { BUILTIN_PROPS, loadProps, type PropAnchor, type PropDef } from '../../lib/props'
+import { BUILTIN_PROPS, loadProps, type PropAnchor } from '../../lib/props'
 import ImageCropperModal from './ImageCropperModal'
 
 export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void }) {
@@ -49,12 +58,11 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
     const reader = new FileReader()
     reader.onload = () => {
       setRawImageForCrop(reader.result as string)
-      setLabel(file.name.replace(/\.[^/.]+$/, ''))
     }
     reader.readAsDataURL(file)
   }
 
-  const handleCropConfirmed = (croppedDataUrl: string) => {
+  const handleCropComplete = (croppedDataUrl: string) => {
     setPreviewSrc(croppedDataUrl)
     setRawImageForCrop(null)
     setShowUploadModal(true)
@@ -64,73 +72,62 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
     e.preventDefault()
     if (!previewSrc || !label.trim()) return
 
-    const id = `custom_prop_${Date.now()}`
-    await saveCustomProp({
-      id,
+    const newProp: CustomProp = {
+      id: `custom_prop_${Date.now()}`,
       label: label.trim(),
       src: previewSrc,
       anchor,
       offsetY,
       scaleFactor,
-    })
+      isCustom: true,
+    }
 
-    setShowUploadModal(false)
+    await saveCustomProp(newProp)
+    await loadData()
+
+    // Reset Form
     setLabel('')
     setPreviewSrc(null)
     setOffsetY(-0.15)
     setScaleFactor(1.4)
-    await loadData()
+    setShowUploadModal(false)
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this custom wearable prop?')) return
+    if (!confirm('Delete this custom prop?')) return
     await deleteCustomProp(id)
     await loadData()
   }
 
   return (
     <div className="space-y-6">
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/png,image/webp,image/svg+xml"
-        onChange={handleFileChange}
-        className="hidden"
-      />
-
-      {/* Interactive Cropper Modal */}
+      {/* Cropper Modal */}
       {rawImageForCrop && (
         <ImageCropperModal
           imageUrl={rawImageForCrop}
-          aspectRatio={1}
-          showFrameOverlay="none"
-          title="Crop & Align Prop Sprite"
-          onConfirm={handleCropConfirmed}
+          onConfirm={handleCropComplete}
           onCancel={() => {
             setRawImageForCrop(null)
             if (fileInputRef.current) fileInputRef.current.value = ''
           }}
+          title="Crop & Resize Wearable Prop"
         />
       )}
 
-      {/* Top Header & Upload Button */}
-      <div className="flex items-center justify-between bg-white p-3.5 rounded-xl bevel-in">
+      {/* Top action bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-xl bevel-in">
         <div>
-          <h2 className="font-pixel text-xs sm:text-sm text-[#5b7fcb]">
-            AR Wearable Props & Filters
-          </h2>
+          <h2 className="font-pixel text-xs text-[#5b7fcb]">AR Wearables & Face Tracking Props</h2>
           <p className="font-pixel text-[9px] text-[#8792c4] mt-0.5">
-            Wearable props dynamically anchor and track faces in the live camera booth. Click 👁️/🙈 to hide or show in photobooth.
+            Wearable props stick dynamically to faces using real-time landmark tracking
           </p>
         </div>
 
         <button
-          type="button"
           onClick={() => fileInputRef.current?.click()}
           className="btn95 is-primary !px-4 !py-2 text-xs font-bold flex items-center gap-1.5"
         >
-          <span>➕</span>
+          <Plus className="w-3.5 h-3.5" />
           <span>Upload Prop</span>
         </button>
       </div>
@@ -161,7 +158,17 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
                       : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
                   }`}
                 >
-                  <span>{isHidden ? '🙈 Hidden' : '👁️ Active'}</span>
+                  {isHidden ? (
+                    <>
+                      <EyeOff className="w-2.5 h-2.5" />
+                      <span>Hidden</span>
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="w-2.5 h-2.5" />
+                      <span>Active</span>
+                    </>
+                  )}
                 </button>
 
                 <div className="h-20 w-full flex items-center justify-center bg-[#f8fafc] rounded p-1 mb-2 mt-4">
@@ -191,9 +198,9 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
         {customProps.length === 0 ? (
           <div
             onClick={() => setShowUploadModal(true)}
-            className="border-2 border-dashed border-[#cdd6f0] hover:border-[#8198ed] rounded-xl p-8 text-center cursor-pointer transition-colors bg-white/40"
+            className="border-2 border-dashed border-[#cdd6f0] hover:border-[#8198ed] rounded-xl p-8 text-center cursor-pointer transition-colors bg-white/40 flex flex-col items-center justify-center"
           >
-            <p className="text-2xl mb-1">🎭</p>
+            <Sparkles className="w-8 h-8 text-[#8198ed] mb-2" />
             <p className="font-pixel text-xs text-[#5b7fcb] mb-1">No custom props added</p>
             <p className="font-pixel text-[9px] text-[#8792c4]">
               Click here to upload PNG hats, glasses, bunny ears, or crowns!
@@ -216,20 +223,30 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
                       type="button"
                       onClick={(e) => handleToggleHide(p.id, e)}
                       title={isHidden ? 'Click to show in photobooth' : 'Click to hide from photobooth'}
-                      className={`text-xs px-1.5 py-0.5 rounded flex items-center gap-0.5 font-pixel text-[8px] transition-all ${
+                      className={`text-xs px-1.5 py-0.5 rounded flex items-center gap-1 font-pixel text-[8px] transition-all ${
                         isHidden
                           ? 'bg-rose-100 text-rose-600 hover:bg-rose-200'
                           : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
                       }`}
                     >
-                      <span>{isHidden ? '🙈 Hidden' : '👁️ Active'}</span>
+                      {isHidden ? (
+                        <>
+                          <EyeOff className="w-2.5 h-2.5" />
+                          <span>Hidden</span>
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-2.5 h-2.5" />
+                          <span>Active</span>
+                        </>
+                      )}
                     </button>
                     <button
                       onClick={() => handleDelete(p.id)}
                       title="Delete prop"
-                      className="text-xs p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                     >
-                      ✕
+                      <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
 
@@ -282,9 +299,9 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
                 {!previewSrc ? (
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-[#8198ed] bg-white rounded-lg p-6 text-center cursor-pointer hover:bg-[#f8fafc] transition-colors"
+                    className="border-2 border-dashed border-[#8198ed] bg-white rounded-lg p-6 text-center cursor-pointer hover:bg-[#f8fafc] transition-colors flex flex-col items-center justify-center"
                   >
-                    <p className="text-3xl mb-1">🖼️</p>
+                    <ImageIcon className="w-8 h-8 text-[#8198ed] mb-1" />
                     <p className="font-pixel text-xs text-[#5b7fcb]">Choose Transparent PNG Sprite</p>
                     <p className="text-[10px] text-slate-400 mt-1 font-sans">
                       (Hats, glasses, masks, cat ears, ribbons, etc.)

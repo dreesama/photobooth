@@ -1,3 +1,4 @@
+import { ArrowLeft } from 'lucide-react'
 import { TEMPLATES, countFor, type Template } from '../../lib/strip'
 import poseSample from '../../imports/OmoideCam-2/302313d2efc07f05bc89847ee40e382521e8ce4b.png'
 
@@ -84,9 +85,10 @@ export default function LayoutPicker({ onConfirm, onBack }: Props) {
           <button
             type="button"
             onClick={onBack}
-            className="bg-[#9cb2f8] hover:bg-[#8ca8f5] active:translate-y-0.5 text-white px-7 sm:px-9 py-2.5 sm:py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#7088bc] transition-all cursor-pointer select-none"
+            className="bg-[#9cb2f8] hover:bg-[#8ca8f5] active:translate-y-0.5 text-white px-7 sm:px-9 py-2.5 sm:py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#7088bc] transition-all cursor-pointer select-none flex items-center gap-2"
           >
-            ← Back to Home
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to Home</span>
           </button>
         </div>
       </div>

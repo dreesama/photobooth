@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Save, Download, Upload, Check } from 'lucide-react'
 import {
   getSettings,
   saveSettings,
@@ -233,9 +234,13 @@ export default function SettingsTab({ onSettingsChange }: { onSettingsChange?: (
 
         {/* Save button */}
         <div className="flex items-center justify-between">
-          <span className="font-pixel text-xs text-green-600 font-bold">{savedMessage}</span>
-          <button type="submit" className="btn95 is-primary !px-6 !py-2.5 text-xs font-bold">
-            💾 Save Settings
+          <span className="font-pixel text-xs text-green-600 font-bold flex items-center gap-1">
+            {savedMessage && <Check className="w-3.5 h-3.5 text-green-600" />}
+            <span>{savedMessage}</span>
+          </span>
+          <button type="submit" className="btn95 is-primary !px-6 !py-2.5 text-xs font-bold flex items-center gap-1.5">
+            <Save className="w-3.5 h-3.5" />
+            <span>Save Settings</span>
           </button>
         </div>
       </form>
@@ -259,12 +264,12 @@ export default function SettingsTab({ onSettingsChange }: { onSettingsChange?: (
             disabled={exporting}
             className="btn95 !px-4 !py-2 text-xs font-bold flex items-center gap-1.5"
           >
-            <span>💾</span>
+            <Download className="w-3.5 h-3.5" />
             <span>{exporting ? 'Exporting...' : 'Export Complete Backup (JSON)'}</span>
           </button>
 
           <label className="btn95 is-accent !px-4 !py-2 text-xs font-bold flex items-center gap-1.5 cursor-pointer">
-            <span>📥</span>
+            <Upload className="w-3.5 h-3.5" />
             <span>Import Backup (JSON)</span>
             <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
           </label>

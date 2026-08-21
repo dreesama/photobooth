@@ -1,5 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
 import {
+  Star,
+  Download,
+  Trash2,
+  Printer,
+  Sparkles,
+  Camera,
+  Copy,
+  Check,
+  X,
+  Share2,
+} from 'lucide-react'
+import {
   getArchive,
   deleteArchiveItem,
   toggleArchiveFavorite,
@@ -240,7 +252,7 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
               filterFav ? '!bg-[#fbbf24] !text-black !border-[#d97706]' : ''
             }`}
           >
-            <span>★</span>
+            <Star className={`w-3.5 h-3.5 ${filterFav ? 'fill-black' : 'text-amber-500'}`} />
             <span>Favorites</span>
           </button>
         </div>
@@ -249,16 +261,18 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
           <button
             onClick={downloadAll}
             disabled={items.length === 0}
-            className="btn95 !px-3 !py-1.5 text-xs font-bold"
+            className="btn95 !px-3 !py-1.5 text-xs font-bold flex items-center gap-1.5"
           >
-            📥 Download All ({items.length})
+            <Download className="w-3.5 h-3.5" />
+            <span>Download All ({items.length})</span>
           </button>
           <button
             onClick={handleClearAll}
             disabled={items.length === 0}
-            className="btn95 !px-3 !py-1.5 text-xs text-red-600 hover:!bg-red-50"
+            className="btn95 !px-3 !py-1.5 text-xs text-red-600 hover:!bg-red-50 flex items-center gap-1"
           >
-            🗑️ Clear
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Clear</span>
           </button>
         </div>
       </div>
@@ -300,12 +314,13 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
                     onClick={(e) => handleFavorite(item.id, e)}
                     className="absolute top-1.5 right-1.5 text-sm p-1 rounded bg-black/40 hover:bg-black/70 text-white leading-none transition-all"
                   >
-                    {item.favorite ? '⭐' : '☆'}
+                    <Star className={`w-3.5 h-3.5 ${item.favorite ? 'text-amber-400 fill-amber-400' : 'text-white'}`} />
                   </button>
                   {/* Printed count badge */}
                   {(item.printedCount ?? 0) > 0 && (
-                    <span className="absolute bottom-1.5 left-1.5 bg-[#8198ed] text-white text-[8px] font-pixel px-1.5 py-0.5 rounded shadow">
-                      🖨️ {item.printedCount}
+                    <span className="absolute bottom-1.5 left-1.5 bg-[#8198ed] text-white text-[8px] font-pixel px-1.5 py-0.5 rounded shadow flex items-center gap-1">
+                      <Printer className="w-2.5 h-2.5" />
+                      <span>{item.printedCount}</span>
                     </span>
                   )}
                 </div>
@@ -328,9 +343,9 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
                         setActiveModal('print')
                       }}
                       title="Quick Print"
-                      className="text-xs p-1 hover:bg-slate-100 rounded"
+                      className="text-xs p-1 hover:bg-slate-100 rounded text-[#5b7fcb]"
                     >
-                      🖨️
+                      <Printer className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={(e) => {
@@ -339,16 +354,16 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
                         setActiveModal('social')
                       }}
                       title="Post / Social Export"
-                      className="text-xs p-1 hover:bg-slate-100 rounded"
+                      className="text-xs p-1 hover:bg-slate-100 rounded text-[#8198ed]"
                     >
-                      ✨
+                      <Sparkles className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={(e) => handleDelete(item.id, e)}
                       title="Delete Photo"
                       className="text-xs p-1 hover:bg-red-50 text-red-500 rounded"
                     >
-                      🗑️
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -371,17 +386,33 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b-2 border-[#8198ed] mb-4">
               <div className="flex items-center gap-2">
-                <span className="font-pixel text-sm text-[#5b7fcb]">
-                  {activeModal === 'detail' && '📸 Photo Session Detail'}
-                  {activeModal === 'print' && '🖨️ Print Photo Strip'}
-                  {activeModal === 'social' && '✨ Export for Social / Posting'}
+                <span className="font-pixel text-sm text-[#5b7fcb] flex items-center gap-1.5">
+                  {activeModal === 'detail' && (
+                    <>
+                      <Camera className="w-4 h-4" />
+                      <span>Photo Session Detail</span>
+                    </>
+                  )}
+                  {activeModal === 'print' && (
+                    <>
+                      <Printer className="w-4 h-4" />
+                      <span>Print Photo Strip</span>
+                    </>
+                  )}
+                  {activeModal === 'social' && (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      <span>Export for Social / Posting</span>
+                    </>
+                  )}
                 </span>
               </div>
               <button
                 onClick={() => setActiveModal(null)}
-                className="font-pixel text-xs text-[#8792c4] hover:text-red-500 font-bold px-2 py-1"
+                className="font-pixel text-xs text-[#8792c4] hover:text-red-500 font-bold px-2 py-1 flex items-center gap-1"
               >
-                ✕ Close
+                <X className="w-3.5 h-3.5" />
+                <span>Close</span>
               </button>
             </div>
 
@@ -460,21 +491,24 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
                       <a
                         href={selectedItem.stripDataUrl}
                         download={`photobooth-${selectedItem.id}.png`}
-                        className="btn95 is-primary !px-4 !py-2 text-xs font-bold"
+                        className="btn95 is-primary !px-4 !py-2 text-xs font-bold flex items-center gap-1.5"
                       >
-                        💾 Download High-Res PNG
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download High-Res PNG</span>
                       </a>
                       <button
                         onClick={() => setActiveModal('print')}
-                        className="btn95 !px-4 !py-2 text-xs font-bold"
+                        className="btn95 !px-4 !py-2 text-xs font-bold flex items-center gap-1.5"
                       >
-                        🖨️ Print
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>Print</span>
                       </button>
                       <button
                         onClick={() => handleDelete(selectedItem.id)}
-                        className="btn95 !px-3 !py-2 text-xs text-red-600 hover:!bg-red-50"
+                        className="btn95 !px-3 !py-2 text-xs text-red-600 hover:!bg-red-50 flex items-center gap-1"
                       >
-                        Delete
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
                       </button>
                     </div>
                   </div>
@@ -547,7 +581,7 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
                     onClick={() => handlePrint(selectedItem)}
                     className="btn95 is-primary !px-6 !py-2.5 text-xs font-bold flex items-center gap-1.5"
                   >
-                    <span>🖨️</span>
+                    <Printer className="w-4 h-4" />
                     <span>Send to Printer (4x6 Photopaper)</span>
                   </button>
                 </div>
@@ -594,17 +628,19 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
                   <button
                     onClick={copyImageToClipboard}
                     disabled={copying}
-                    className="btn95 !px-4 !py-2 text-xs font-bold"
+                    className="btn95 !px-4 !py-2 text-xs font-bold flex items-center gap-1.5"
                   >
-                    {copying ? 'Copying...' : '📋 Copy Image to Clipboard'}
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copying ? 'Copying...' : 'Copy Image to Clipboard'}</span>
                   </button>
 
                   <a
                     href={socialDataUrl}
                     download={`itguild-post-${socialFormat}-${Date.now()}.png`}
-                    className="btn95 is-primary !px-5 !py-2 text-xs font-bold"
+                    className="btn95 is-primary !px-5 !py-2 text-xs font-bold flex items-center gap-1.5"
                   >
-                    💾 Download Social Post
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download Social Post</span>
                   </a>
                 </div>
               </div>

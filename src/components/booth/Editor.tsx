@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import QRCode from 'qrcode'
 import {
+  Download,
+  QrCode,
+  Ban,
+  Trash2,
+  Check,
+  Copy,
+  X,
+  ExternalLink,
+  RotateCcw,
+  Palette,
+} from 'lucide-react'
+import {
   BACKGROUNDS,
   FILTERS,
   LOGOS,
@@ -255,9 +267,10 @@ export default function Editor({ frames, template, onRetake }: Props) {
           </h2>
           <button
             onClick={onRetake}
-            className="font-pixel text-[10px] sm:text-xs text-[#8792c4] hover:text-[#5b7fcb] underline select-none cursor-pointer"
+            className="font-pixel text-[10px] sm:text-xs text-[#8792c4] hover:text-[#5b7fcb] underline select-none cursor-pointer flex items-center gap-1"
           >
-            ↺ Retake
+            <RotateCcw className="w-3 h-3" />
+            <span>Retake</span>
           </button>
         </div>
 
@@ -315,9 +328,10 @@ export default function Editor({ frames, template, onRetake }: Props) {
             <button
               type="button"
               onClick={download}
-              className="w-full bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#5b6fbc] transition-all cursor-pointer select-none text-center"
+              className="w-full bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#5b6fbc] transition-all cursor-pointer select-none text-center flex items-center justify-center gap-2"
             >
-              Download
+              <Download className="w-4 h-4" />
+              <span>Download</span>
             </button>
           </div>
 
@@ -326,9 +340,10 @@ export default function Editor({ frames, template, onRetake }: Props) {
             <button
               type="button"
               onClick={handleOpenQR}
-              className="bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white px-5 py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#5b6fbc] transition-all cursor-pointer select-none"
+              className="bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white px-5 py-3 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[3px_3px_0px_#5b6fbc] transition-all cursor-pointer select-none flex items-center gap-1.5"
             >
-              QR
+              <QrCode className="w-4 h-4" />
+              <span>QR</span>
             </button>
           </div>
         </div>
@@ -365,7 +380,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
                   )}
                   {filter === f.id && (
                     <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-[#5b7fcb] text-white grid place-items-center text-[9px] font-bold shadow">
-                      ✓
+                      <Check className="w-2.5 h-2.5" />
                     </span>
                   )}
                 </div>
@@ -390,7 +405,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
                 bg.id === 'none' ? 'ring-3 ring-[#ff80a0] shadow-md scale-105' : 'hover:scale-105'
               }`}
             >
-              <span className="text-[#ff5c8a] text-2xl font-bold font-mono">✕</span>
+              <Ban className="w-6 h-6 text-rose-400" />
             </button>
 
             {/* Pattern/Frame image backgrounds */}
@@ -422,7 +437,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
               className="size-20 sm:size-24 rounded-xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex items-center justify-center transition-all cursor-pointer hover:scale-105"
               title="Clear all stickers"
             >
-              <span className="text-[#ff5c8a] text-2xl font-bold font-mono">✕</span>
+              <Trash2 className="w-6 h-6 text-rose-400" />
             </button>
 
             {/* Stickers List */}
@@ -494,9 +509,9 @@ export default function Editor({ frames, template, onRetake }: Props) {
                 {/* Custom Color Input */}
                 <label
                   title="Custom Color"
-                  className="size-7 sm:size-8 rounded-full border-2 border-dashed border-[#8198ed] grid place-items-center cursor-pointer hover:scale-105 bg-white shadow-xs text-xs overflow-hidden"
+                  className="size-7 sm:size-8 rounded-full border-2 border-dashed border-[#8198ed] grid place-items-center cursor-pointer hover:scale-105 bg-white shadow-xs text-xs overflow-hidden text-[#8198ed]"
                 >
-                  <span className="text-[10px]">🎨</span>
+                  <Palette className="w-3.5 h-3.5" />
                   <input
                     type="color"
                     value={textColor}
@@ -539,7 +554,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
               onClick={() => setShowShare(false)}
               className="absolute top-4 right-4 size-8 rounded-lg bg-[#e8eeff] hover:bg-[#d8e4ff] text-[#5b7fcb] font-bold text-sm flex items-center justify-center cursor-pointer transition-colors"
             >
-              ✕
+              <X className="w-4 h-4" />
             </button>
 
             {/* Title */}
@@ -578,19 +593,30 @@ export default function Editor({ frames, template, onRetake }: Props) {
                         className="flex-1 bg-[#f8fafc] border border-slate-200 px-3 py-2 font-mono text-[10px] outline-none truncate rounded-lg text-slate-600 select-all"
                       />
                       <button
-                        className="btn95 is-primary !px-3 !py-2 text-[10px] font-bold"
+                        className="btn95 is-primary !px-3 !py-2 text-[10px] font-bold flex items-center gap-1"
                         onClick={copyLink}
                       >
-                        {copied ? '✓ Copied' : 'Copy'}
+                        {copied ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-300" />
+                            <span>Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy</span>
+                          </>
+                        )}
                       </button>
                     </div>
                   ) : (
                     <button
                       type="button"
                       onClick={download}
-                      className="btn95 is-primary !px-4 !py-2.5 text-xs font-bold w-full"
+                      className="btn95 is-primary !px-4 !py-2.5 text-xs font-bold w-full flex items-center justify-center gap-2"
                     >
-                      💾 Download High-Res PNG
+                      <Download className="w-4 h-4" />
+                      <span>Download High-Res PNG</span>
                     </button>
                   )}
                 </div>
@@ -601,9 +627,10 @@ export default function Editor({ frames, template, onRetake }: Props) {
                 <button
                   type="button"
                   onClick={download}
-                  className="btn95 is-primary !px-5 !py-2.5 text-xs font-bold"
+                  className="btn95 is-primary !px-5 !py-2.5 text-xs font-bold flex items-center gap-2"
                 >
-                  💾 Save to Device
+                  <Download className="w-4 h-4" />
+                  <span>Save to Device</span>
                 </button>
               </div>
             )}

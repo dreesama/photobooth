@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Plus, Eye, EyeOff, Trash2, Palette } from 'lucide-react'
 import {
   getCustomStickers,
   saveCustomSticker,
@@ -125,7 +126,7 @@ export default function StickersTab({ onStickersChange }: { onStickersChange?: (
           onClick={() => fileInputRef.current?.click()}
           className="btn95 is-primary !px-4 !py-2.5 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shrink-0"
         >
-          <span>➕</span>
+          <Plus className="w-3.5 h-3.5" />
           <span>Upload Sticker</span>
         </button>
       </div>
@@ -156,7 +157,11 @@ export default function StickersTab({ onStickersChange }: { onStickersChange?: (
                       : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
                   }`}
                 >
-                  <span>{isHidden ? '🙈' : '👁️'}</span>
+                  {isHidden ? (
+                    <EyeOff className="w-2.5 h-2.5" />
+                  ) : (
+                    <Eye className="w-2.5 h-2.5" />
+                  )}
                 </button>
 
                 <div className="h-16 w-full flex items-center justify-center bg-[#f8fafc] rounded-lg p-1.5 mb-1.5 mt-2">
@@ -180,7 +185,7 @@ export default function StickersTab({ onStickersChange }: { onStickersChange?: (
             onClick={() => fileInputRef.current?.click()}
             className="border-2 border-dashed border-[#cdd6f0] hover:border-[#8198ed] rounded-2xl p-10 text-center cursor-pointer transition-all bg-white/50 hover:bg-white flex flex-col items-center justify-center"
           >
-            <span className="text-3xl mb-2">🎨</span>
+            <Palette className="w-8 h-8 text-[#8198ed] mb-2" />
             <p className="font-pixel text-xs text-[#5b7fcb] mb-1">No custom stickers uploaded yet</p>
             <p className="font-pixel text-[9px] text-[#8792c4] max-w-sm">
               Click here to upload PNG doodles, sparkles, hearts, event logos, or emojis!
@@ -208,15 +213,19 @@ export default function StickersTab({ onStickersChange }: { onStickersChange?: (
                           : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
                       }`}
                     >
-                      <span>{isHidden ? '🙈' : '👁️'}</span>
+                      {isHidden ? (
+                        <EyeOff className="w-2.5 h-2.5" />
+                      ) : (
+                        <Eye className="w-2.5 h-2.5" />
+                      )}
                     </button>
                     <button
                       type="button"
                       onClick={() => handleDelete(s.id)}
                       title="Delete sticker"
-                      className="size-4 bg-red-100 hover:bg-red-200 text-red-600 rounded-full flex items-center justify-center text-[9px] opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                      className="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
                     >
-                      ✕
+                      <Trash2 className="w-2.5 h-2.5" />
                     </button>
                   </div>
 

@@ -1,4 +1,16 @@
 import { useState, useEffect } from 'react'
+import {
+  Settings,
+  Camera,
+  Star,
+  Palette,
+  Lock,
+  Image as ImageIcon,
+  Sparkles,
+  Frame,
+  Sliders,
+  LogOut,
+} from 'lucide-react'
 import Window from '../Window'
 import FloatingDeco from '../FloatingDeco'
 import ArchiveTab from './ArchiveTab'
@@ -64,7 +76,7 @@ export default function AdminDashboard({ onExit, onStartBooth }: Props) {
         <div className="bg-[#efefff] border-3 border-[#8198ed] rounded-xl shadow-xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-[#8198ed] text-white grid place-items-center text-xl font-bold shadow-md">
-              ⚙️
+              <Settings className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -85,16 +97,23 @@ export default function AdminDashboard({ onExit, onStartBooth }: Props) {
           <div className="flex flex-wrap items-center gap-2">
             <div className="bg-white bevel-in px-3 py-1.5 rounded-md text-center">
               <span className="font-pixel text-[8px] text-slate-400 block">TOTAL PHOTOS</span>
-              <span className="font-pixel text-xs text-[#5b7fcb] font-bold">📸 {stats.photos}</span>
+              <span className="font-pixel text-xs text-[#5b7fcb] font-bold flex items-center justify-center gap-1">
+                <Camera className="w-3.5 h-3.5" />
+                <span>{stats.photos}</span>
+              </span>
             </div>
             <div className="bg-white bevel-in px-3 py-1.5 rounded-md text-center">
               <span className="font-pixel text-[8px] text-slate-400 block">FAVORITES</span>
-              <span className="font-pixel text-xs text-[#d97706] font-bold">⭐ {stats.favorites}</span>
+              <span className="font-pixel text-xs text-[#d97706] font-bold flex items-center justify-center gap-1">
+                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                <span>{stats.favorites}</span>
+              </span>
             </div>
             <div className="bg-white bevel-in px-3 py-1.5 rounded-md text-center">
               <span className="font-pixel text-[8px] text-slate-400 block">CUSTOM ASSETS</span>
-              <span className="font-pixel text-xs text-[#7c3aed] font-bold">
-                🎨 {stats.props + stats.stickers + stats.backgrounds}
+              <span className="font-pixel text-xs text-[#7c3aed] font-bold flex items-center justify-center gap-1">
+                <Palette className="w-3.5 h-3.5" />
+                <span>{stats.props + stats.stickers + stats.backgrounds}</span>
               </span>
             </div>
           </div>
@@ -105,11 +124,12 @@ export default function AdminDashboard({ onExit, onStartBooth }: Props) {
               onClick={onStartBooth}
               className="btn95 is-primary !px-4 !py-2 text-xs font-bold flex items-center gap-1.5"
             >
-              <span>📷</span>
+              <Camera className="w-4 h-4" />
               <span>Launch Booth</span>
             </button>
-            <button onClick={onExit} className="btn95 !px-3 !py-2 text-xs font-bold">
-              Exit
+            <button onClick={onExit} className="btn95 !px-3 !py-2 text-xs font-bold flex items-center gap-1">
+              <LogOut className="w-3.5 h-3.5 text-slate-500" />
+              <span>Exit</span>
             </button>
           </div>
         </div>
@@ -127,7 +147,7 @@ export default function AdminDashboard({ onExit, onStartBooth }: Props) {
               ? 'Event Frames & Backgrounds'
               : 'Branding & Preferences'
           }`}
-          icon={<span className="text-xs">🔒</span>}
+          icon={<Lock className="w-3.5 h-3.5 text-[#5b7fcb]" />}
           className="w-full shadow-2xl rounded-xl"
           collapsible={false}
           onClose={onExit}
@@ -140,7 +160,7 @@ export default function AdminDashboard({ onExit, onStartBooth }: Props) {
                 tab === 'archive' ? 'is-primary' : ''
               }`}
             >
-              <span>🖼️</span>
+              <ImageIcon className="w-3.5 h-3.5" />
               <span>Archive ({stats.photos})</span>
             </button>
 
@@ -150,7 +170,7 @@ export default function AdminDashboard({ onExit, onStartBooth }: Props) {
                 tab === 'props' ? 'is-primary' : ''
               }`}
             >
-              <span>🎭</span>
+              <Sparkles className="w-3.5 h-3.5" />
               <span>AR Wearables {stats.props > 0 ? `(${stats.props})` : ''}</span>
             </button>
 
@@ -160,7 +180,7 @@ export default function AdminDashboard({ onExit, onStartBooth }: Props) {
                 tab === 'stickers' ? 'is-primary' : ''
               }`}
             >
-              <span>🎨</span>
+              <Palette className="w-3.5 h-3.5" />
               <span>Stickers {stats.stickers > 0 ? `(${stats.stickers})` : ''}</span>
             </button>
 
@@ -170,7 +190,7 @@ export default function AdminDashboard({ onExit, onStartBooth }: Props) {
                 tab === 'backgrounds' ? 'is-primary' : ''
               }`}
             >
-              <span>📐</span>
+              <Frame className="w-3.5 h-3.5" />
               <span>Event Frames {stats.backgrounds > 0 ? `(${stats.backgrounds})` : ''}</span>
             </button>
 
@@ -180,7 +200,7 @@ export default function AdminDashboard({ onExit, onStartBooth }: Props) {
                 tab === 'settings' ? 'is-primary' : ''
               }`}
             >
-              <span>⚙️</span>
+              <Sliders className="w-3.5 h-3.5" />
               <span>Settings & Backup</span>
             </button>
           </div>
