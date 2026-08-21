@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import { Camera, Lock } from 'lucide-react'
 
-export default function PublicPortal() {
+type Props = {
+  onOpenAdmin?: () => void
+}
+
+export default function PublicPortal({ onOpenAdmin }: Props) {
   const [photoCode, setPhotoCode] = useState('')
   const [error, setError] = useState('')
 
@@ -65,7 +69,7 @@ export default function PublicPortal() {
             />
             <button
               type="submit"
-              className="btn95 is-primary !px-4 !py-2 text-xs font-bold shrink-0"
+              className="btn95 is-primary !px-4 !py-2 text-xs font-bold shrink-0 cursor-pointer"
             >
               View
             </button>
@@ -73,12 +77,19 @@ export default function PublicPortal() {
           {error && <p className="text-[10px] text-rose-500 font-bold text-left">{error}</p>}
         </form>
 
-        {/* Footer Notice */}
+        {/* Footer Notice with Secret Admin Portal Gate */}
         <div className="mt-8 pt-4 border-t border-slate-100 w-full flex items-center justify-center gap-1.5 text-[#8792c4]">
-          <Lock className="w-3 h-3" />
-          <p className="font-pixel text-[8px] tracking-wider">
-            Photobooth Terminal: Local Kiosk Only
-          </p>
+          <button
+            type="button"
+            onClick={onOpenAdmin}
+            className="flex items-center gap-1.5 hover:text-[#5b7fcb] transition-colors cursor-pointer text-slate-400 group"
+            title="Operator / Admin Access"
+          >
+            <Lock className="w-3 h-3 group-hover:text-[#5b7fcb]" />
+            <span className="font-pixel text-[8px] tracking-wider">
+              Operator Portal Access
+            </span>
+          </button>
         </div>
       </div>
     </div>

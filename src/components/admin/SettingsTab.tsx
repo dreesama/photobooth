@@ -15,9 +15,11 @@ import {
   type EventSettings,
   DEFAULT_SETTINGS,
 } from '../../lib/db'
+import { getStoredPasscode, setStoredPasscode } from './AdminPasscodeModal'
 
 export default function SettingsTab({ onSettingsChange }: { onSettingsChange?: () => void }) {
   const [settings, setSettings] = useState<EventSettings>(DEFAULT_SETTINGS)
+  const [passcode, setPasscode] = useState(getStoredPasscode())
   const [savedMessage, setSavedMessage] = useState('')
   const [exporting, setExporting] = useState(false)
 
@@ -204,6 +206,45 @@ export default function SettingsTab({ onSettingsChange }: { onSettingsChange?: (
                   Save all sessions to local database
                 </label>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Admin Passcode Security */}
+        <div className="bg-white p-4 rounded-xl bevel-in space-y-4">
+          <h2 className="font-pixel text-xs sm:text-sm text-[#5b7fcb] pb-2 border-b border-slate-100 flex items-center justify-between">
+            <span>Admin Passcode Security</span>
+            <span className="text-[9px] text-[#8198ed] font-mono font-normal">Railway Protection</span>
+          </h2>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+            <div>
+              <label className="block font-pixel text-[10px] text-[#5b7fcb] mb-1">
+                Admin Master Passcode / PIN
+              </label>
+              <input
+                type="text"
+                value={passcode}
+                onChange={(e) => {
+                  setPasscode(e.target.value)
+                  setStoredPasscode(e.target.value)
+                }}
+                placeholder="2026"
+                className="w-full bg-[#f8fafc] bevel-in px-3 py-2 text-xs font-mono outline-none rounded"
+              />
+              <p className="font-sans text-[10px] text-slate-400 mt-1">
+                Protects the Admin Dashboard on Railway and public networks. Default is <code>2026</code>.
+              </p>
+            </div>
+
+            <div className="bg-[#f0f4ff] p-3 rounded-lg border border-[#cdd6f0] text-[11px] text-slate-600 space-y-1">
+              <p className="font-bold text-[#5b7fcb]">Secret Admin Direct Access Links:</p>
+              <p className="font-mono text-[10px] text-slate-500 break-all">
+                <code>?admin=itguild</code> or <code>#itguild-admin</code>
+              </p>
+              <p className="text-[10px] text-slate-400">
+                Opening these secret URL parameters automatically prompts for your passcode.
+              </p>
             </div>
           </div>
         </div>

@@ -122,14 +122,21 @@ export default function AdminDashboard({ onExit, onStartBooth }: Props) {
           <div className="flex items-center gap-2">
             <button
               onClick={onStartBooth}
-              className="btn95 is-primary !px-4 !py-2 text-xs font-bold flex items-center gap-1.5"
+              className="btn95 is-primary !px-4 !py-2 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
             >
               <Camera className="w-4 h-4" />
               <span>Launch Booth</span>
             </button>
-            <button onClick={onExit} className="btn95 !px-3 !py-2 text-xs font-bold flex items-center gap-1">
-              <LogOut className="w-3.5 h-3.5 text-slate-500" />
-              <span>Exit</span>
+            <button
+              onClick={() => {
+                sessionStorage.removeItem('itguild_admin_authenticated')
+                onExit()
+              }}
+              title="Lock Admin Portal & Log Out"
+              className="btn95 !px-3 !py-2 text-xs font-bold flex items-center gap-1 text-slate-600 hover:text-rose-600 cursor-pointer"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Lock / Exit</span>
             </button>
           </div>
         </div>
