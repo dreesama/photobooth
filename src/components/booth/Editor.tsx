@@ -50,6 +50,9 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
   const [customText, setCustomText] = useState<string>('IT GUILD')
   const [textColor, setTextColor] = useState<string>('#5b7fcb')
   const [fontStyle, setFontStyle] = useState<string>('pixel')
+  const [fontSizeScale, setFontSizeScale] = useState<number>(1.0)
+  const [isBold, setIsBold] = useState<boolean>(true)
+  const [isItalic, setIsItalic] = useState<boolean>(false)
   const [stickers, setStickers] = useState<PlacedSticker[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [ready, setReady] = useState(0)
@@ -135,8 +138,11 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
       customText,
       textColor,
       fontStyle,
+      fontSizeScale,
+      isBold,
+      isItalic,
     })
-  }, [frames, template, filter, bg, frameColor, logo, customText, textColor, fontStyle, ready])
+  }, [frames, template, filter, bg, frameColor, logo, customText, textColor, fontStyle, fontSizeScale, isBold, isItalic, ready])
 
   // Debounced persistence: saves customization state without blocking UI during dragging
   useEffect(() => {
@@ -179,6 +185,9 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
           customText,
           textColor,
           fontStyle,
+          fontSizeScale,
+          isBold,
+          isItalic,
         })
         const stripDataUrl = c.toDataURL('image/png')
         await saveToArchive({
@@ -200,7 +209,7 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
     return () => {
       if (archiveTimerRef.current) clearTimeout(archiveTimerRef.current)
     }
-  }, [frames, template, rawFramesDataUrls, filter, bg, frameColor, stickers, logo, customText, textColor, fontStyle, ready])
+  }, [frames, template, rawFramesDataUrls, filter, bg, frameColor, stickers, logo, customText, textColor, fontStyle, fontSizeScale, isBold, isItalic, ready])
 
   const { width, height } = stripSize(template)
 
@@ -299,6 +308,9 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
         customText,
         textColor,
         fontStyle,
+        fontSizeScale,
+        isBold,
+        isItalic,
       })
 
       const dataUrl = c.toDataURL('image/png')
@@ -361,7 +373,7 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
     setQrError(null)
 
     try {
-      const c = await composeStripAsync({ frames, template, filter, background: bg, frameColor, stickers, logo: null, customText, textColor, fontStyle })
+      const c = await composeStripAsync({ frames, template, filter, background: bg, frameColor, stickers, logo: null, customText, textColor, fontStyle, fontSizeScale, isBold, isItalic })
       const stripDataUrl = c.toDataURL('image/png')
 
       // Save latest customized photo strip with all backgrounds, stickers, and filters to Archive
@@ -409,6 +421,9 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
         customText,
         textColor,
         fontStyle,
+        fontSizeScale,
+        isBold,
+        isItalic,
       })
       const stripDataUrl = c.toDataURL('image/png')
 
@@ -746,6 +761,71 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
                     </span>
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Font Size & Formatting Toolbar (Bold / Italic / Size Slider & Stepper) */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 pt-1">
+              {/* Bold & Italic Toggles */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="font-pixel text-[9px] text-[#5b7fcb] tracking-wider mr-0.5">Style:</span>
+                <button
+                  type="button"
+                  onClick={() => setIsBold((b) => !b)}
+                  title="Toggle Bold"
+                  className={`size-8 rounded-lg border font-bold text-sm flex items-center justify-center transition-all cursor-pointer shadow-xs ${
+                    isBold
+                      ? 'bg-[#8198ed] text-white border-[#5b6fbc] shadow-md ring-2 ring-[#8198ed]/50'
+                      : 'bg-white text-slate-600 border-[#cdd6f0] hover:bg-[#f8faff]'
+                  }`}
+                >
+                  <span className="font-serif font-black">B</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsItalic((i) => !i)}
+                  title="Toggle Italic"
+                  className={`size-8 rounded-lg border text-sm flex items-center justify-center transition-all cursor-pointer shadow-xs ${
+                    isItalic
+                      ? 'bg-[#8198ed] text-white border-[#5b6fbc] shadow-md ring-2 ring-[#8198ed]/50'
+                      : 'bg-white text-slate-600 border-[#cdd6f0] hover:bg-[#f8faff]'
+                  }`}
+                >
+                  <span className="font-serif italic font-bold">I</span>
+                </button>
+              </div>
+
+              {/* Font Size Slider & Stepper */}
+              <div className="flex-1 flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-[#cdd6f0] shadow-xs">
+                <span className="font-pixel text-[9px] text-[#5b7fcb] tracking-wider shrink-0">Size:</span>
+                <button
+                  type="button"
+                  onClick={() => setFontSizeScale((s) => Math.max(0.6, Number((s - 0.1).toFixed(1))))}
+                  className="size-5 rounded bg-[#e8eeff] hover:bg-[#d8e4ff] text-[#5b7fcb] font-bold text-xs flex items-center justify-center cursor-pointer select-none"
+                  title="Decrease Size"
+                >
+                  -
+                </button>
+                <input
+                  type="range"
+                  min="0.6"
+                  max="1.5"
+                  step="0.05"
+                  value={fontSizeScale}
+                  onChange={(e) => setFontSizeScale(parseFloat(e.target.value))}
+                  className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#8198ed]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setFontSizeScale((s) => Math.min(1.5, Number((s + 0.1).toFixed(1))))}
+                  className="size-5 rounded bg-[#e8eeff] hover:bg-[#d8e4ff] text-[#5b7fcb] font-bold text-xs flex items-center justify-center cursor-pointer select-none"
+                  title="Increase Size"
+                >
+                  +
+                </button>
+                <span className="font-mono text-[10px] text-slate-500 w-8 text-right shrink-0">
+                  {Math.round(fontSizeScale * 100)}%
+                </span>
               </div>
             </div>
 

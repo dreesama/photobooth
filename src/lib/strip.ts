@@ -202,6 +202,9 @@ export type ComposeOpts = {
   customText?: string
   textColor?: string
   fontStyle?: string
+  fontSizeScale?: number
+  isBold?: boolean
+  isItalic?: boolean
 }
 
 // 300 DPI Ultra Sharp Super-Sampled Dimensions
@@ -219,7 +222,7 @@ export function stripSize(t: Template) {
 }
 
 export function renderStripToCanvas(canvas: HTMLCanvasElement, opts: ComposeOpts): void {
-  const { frames, template, filter, background, frameColor, stickers, logo, customText, textColor, fontStyle } = opts
+  const { frames, template, filter, background, frameColor, stickers, logo, customText, textColor, fontStyle, fontSizeScale, isBold, isItalic } = opts
   const { width, height } = stripSize(template)
 
   if (canvas.width !== width || canvas.height !== height) {
@@ -294,7 +297,13 @@ export function renderStripToCanvas(canvas: HTMLCanvasElement, opts: ComposeOpts
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     const fontDef = FONT_OPTIONS.find((f) => f.id === fontStyle) || FONT_OPTIONS[0]
-    ctx.font = `bold ${fontDef.size}px ${fontDef.family}`
+    const baseSize = fontDef.size
+    const scale = fontSizeScale !== undefined ? fontSizeScale : 1
+    const finalSize = Math.round(baseSize * scale)
+    const boldStr = isBold !== false ? 'bold' : 'normal'
+    const italicStr = isItalic ? 'italic' : 'normal'
+
+    ctx.font = `${italicStr} ${boldStr} ${finalSize}px ${fontDef.family}`
     ctx.fillText(text.trim(), width / 2, footY + FOOT / 2)
     ctx.restore()
   }
