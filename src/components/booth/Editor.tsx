@@ -218,24 +218,30 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
     }
   }
 
-  const toggleSticker = (src: string) => {
-    const existing = stickers.find((s) => s.src === src)
-    if (existing) {
-      setStickers((list) => list.filter((s) => s.src !== src))
-      if (selected === existing.uid) setSelected(null)
-    } else {
-      const uid = `st_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-      const next: PlacedSticker = {
-        uid,
-        src,
-        x: 0.5,
-        y: 0.5,
-        scale: 1,
-        rotation: 0,
-      }
-      setStickers((list) => [...list, next])
-      setSelected(uid)
+  const addSticker = (src: string) => {
+    const uid = `st_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+    const count = stickers.length
+    const offsetX = 0.5 + ((count % 5) - 2) * 0.04
+    const offsetY = 0.5 + ((Math.floor(count / 5) % 5) - 2) * 0.04
+    const next: PlacedSticker = {
+      uid,
+      src,
+      x: Math.min(0.85, Math.max(0.15, offsetX)),
+      y: Math.min(0.85, Math.max(0.15, offsetY)),
+      scale: 1,
+      rotation: 0,
     }
+    setStickers((list) => [...list, next])
+    setSelected(uid)
+  }
+
+  const deleteSticker = (uid: string, e?: React.MouseEvent | React.PointerEvent) => {
+    if (e) {
+      e.stopPropagation()
+      e.preventDefault()
+    }
+    setStickers((list) => list.filter((s) => s.uid !== uid))
+    if (selected === uid) setSelected(null)
   }
 
   const onStickerDown = (uid: string) => (e: PointerEvent) => {
@@ -478,30 +484,52 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
               className="w-full h-full block pointer-events-none rounded-xs"
             />
 
-            {stickers.map((s) => (
-              <button
-                key={s.uid}
-                onPointerDown={onStickerDown(s.uid)}
-                onPointerMove={onStageMove}
-                onPointerUp={() => (drag.current = null)}
-                onPointerCancel={() => (drag.current = null)}
-                className={`absolute leading-none touch-none cursor-move select-none ${
-                  selected === s.uid ? 'outline outline-2 outline-dashed outline-[#8198ed]' : ''
-                }`}
-                style={{
-                  left: `${s.x * 100}%`,
-                  top: `${s.y * 100}%`,
-                  transform: `translate(-50%,-50%) rotate(${s.rotation}deg)`,
-                  width: `${s.scale * 42}px`,
-                }}
-              >
-                <img
-                  src={s.src}
-                  alt=""
-                  className="w-full h-full object-contain pointer-events-none select-none"
-                />
-              </button>
-            ))}
+            {stickers.map((s) => {
+              const isSel = selected === s.uid
+              return (
+                <div
+                  key={s.uid}
+                  onPointerDown={onStickerDown(s.uid)}
+                  onPointerMove={onStageMove}
+                  onPointerUp={() => (drag.current = null)}
+                  onPointerCancel={() => (drag.current = null)}
+                  className={`absolute leading-none touch-none cursor-move select-none ${
+                    isSel ? 'z-30' : 'z-20'
+                  }`}
+                  style={{
+                    left: `${s.x * 100}%`,
+                    top: `${s.y * 100}%`,
+                    transform: `translate(-50%,-50%) rotate(${s.rotation}deg)`,
+                    width: `${s.scale * 44}px`,
+                  }}
+                >
+                  <div
+                    className={`relative w-full h-full ${
+                      isSel ? 'ring-2 ring-dashed ring-[#8198ed] rounded-sm' : ''
+                    }`}
+                  >
+                    <img
+                      src={s.src}
+                      alt=""
+                      className="w-full h-full object-contain pointer-events-none select-none drop-shadow-sm"
+                    />
+
+                    {/* Small Delete Button attached to top-right of selected sticker */}
+                    {isSel && (
+                      <button
+                        type="button"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => deleteSticker(s.uid, e)}
+                        className="absolute -top-2.5 -right-2.5 size-5 bg-rose-500 hover:bg-rose-600 active:scale-90 text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-md cursor-pointer z-40 transition-transform"
+                        title="Delete sticker"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
 
@@ -639,22 +667,24 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
 
             {/* Stickers List */}
             {stickersList.map((s) => {
-              const isPlaced = stickers.some((st) => st.src === s.src)
+              const placedCount = stickers.filter((st) => st.src === s.src).length
               return (
                 <button
                   key={s.id}
-                  onClick={() => toggleSticker(s.src)}
-                  className={`size-16 sm:size-20 rounded-xl bg-[#e8eeff] hover:bg-white border-2 flex items-center justify-center p-2.5 transition-all cursor-pointer ${
-                    isPlaced
-                      ? 'border-[#8198ed] ring-3 ring-[#8198ed]/50 shadow-md scale-105'
-                      : 'border-transparent hover:border-[#8198ed] hover:scale-105'
-                  }`}
+                  type="button"
+                  onClick={() => addSticker(s.src)}
+                  className="relative size-16 sm:size-20 rounded-xl bg-[#e8eeff] hover:bg-white border-2 border-transparent hover:border-[#8198ed] hover:scale-105 active:scale-95 flex items-center justify-center p-2.5 transition-all cursor-pointer shadow-xs"
                 >
                   <img
                     src={s.src}
                     alt={s.label}
                     className="max-h-full max-w-full object-contain pointer-events-none"
                   />
+                  {placedCount > 0 && (
+                    <span className="absolute top-1 right-1 bg-[#8198ed] text-white text-[9px] font-bold rounded-full size-4 flex items-center justify-center shadow-xs">
+                      {placedCount}
+                    </span>
+                  )}
                 </button>
               )
             })}
