@@ -98,6 +98,7 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
   const { metrics } = useFaceLandmarker(videoRef, true)
 
   const total = countFor(template)
+  const [propsList, setPropsList] = useState<PropDef[]>(PROPS)
   const [prop, setProp] = useState<PropDef>(PROPS[0])
   const [seconds, setSeconds] = useState(3)
   const [showTimerMenu, setShowTimerMenu] = useState(false)
@@ -113,7 +114,12 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
 
   useEffect(() => {
     start()
-    loadProps()
+    loadProps(false).then((loaded) => {
+      setPropsList(loaded)
+      if (loaded.length > 0 && !loaded.some((p) => p.id === prop.id)) {
+        setProp(loaded[0])
+      }
+    })
   }, [start])
 
   const runSequence = useCallback(async () => {
@@ -192,7 +198,7 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
     <div className="w-full flex flex-col items-center gap-4 py-2 select-none">
       {/* Row 1: Large Touch-Friendly Wearable Props Buttons */}
       <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
-        {PROPS.map((p) => (
+        {propsList.map((p) => (
           <button
             key={p.id}
             onClick={() => setProp(p)}
@@ -340,7 +346,7 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
 
             {/* Polaroid Bottom White Chin with Blue Logo */}
             <p className="font-pixel text-[11px] sm:text-xs text-[#5b7fcb] text-center mt-3 sm:mt-4 tracking-wider select-none">
-              OmoideCam
+              IT GUILD
             </p>
           </div>
         </div>

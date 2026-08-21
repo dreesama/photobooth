@@ -1,10 +1,18 @@
 import { useState, useEffect, useRef } from 'react'
-import { getCustomStickers, saveCustomSticker, deleteCustomSticker, type CustomSticker } from '../../lib/db'
+import {
+  getCustomStickers,
+  saveCustomSticker,
+  deleteCustomSticker,
+  getHiddenAssets,
+  toggleHideAsset,
+  type CustomSticker,
+} from '../../lib/db'
 import { BUILTIN_STICKERS, loadStickers } from '../../lib/stickers'
 import ImageCropperModal from './ImageCropperModal'
 
 export default function StickersTab({ onStickersChange }: { onStickersChange?: () => void }) {
   const [customStickers, setCustomStickers] = useState<CustomSticker[]>([])
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
   const [rawImageForCrop, setRawImageForCrop] = useState<string | null>(null)
   const [croppedSrc, setCroppedSrc] = useState<string | null>(null)
   const [label, setLabel] = useState('')
@@ -13,8 +21,12 @@ export default function StickersTab({ onStickersChange }: { onStickersChange?: (
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const loadData = async () => {
-    const data = await getCustomStickers()
+    const [data, hiddenAssets] = await Promise.all([
+      getCustomStickers(),
+      getHiddenAssets(),
+    ])
     setCustomStickers(data)
+    setHiddenIds(new Set(hiddenAssets.stickers || []))
     await loadStickers()
     onStickersChange?.()
   }
@@ -22,6 +34,12 @@ export default function StickersTab({ onStickersChange }: { onStickersChange?: (
   useEffect(() => {
     loadData()
   }, [])
+
+  const handleToggleHide = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    await toggleHideAsset('stickers', id)
+    await loadData()
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -118,17 +136,36 @@ export default function StickersTab({ onStickersChange }: { onStickersChange?: (
           Built-in Purikura Stickers ({BUILTIN_STICKERS.length})
         </h3>
         <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-9 gap-3">
-          {BUILTIN_STICKERS.map((s) => (
-            <div
-              key={s.id}
-              className="bg-white p-2 rounded-xl border border-slate-200 shadow-xs flex flex-col items-center justify-center text-center hover:border-[#8198ed] transition-all"
-            >
-              <div className="h-16 w-full flex items-center justify-center bg-[#f8fafc] rounded-lg p-1.5 mb-1.5">
-                <img src={s.src} alt={s.label} className="max-h-full max-w-full object-contain" />
+          {BUILTIN_STICKERS.map((s) => {
+            const isHidden = hiddenIds.has(s.id)
+            return (
+              <div
+                key={s.id}
+                className={`p-2 rounded-xl border border-slate-200 shadow-xs flex flex-col items-center justify-between text-center relative group transition-all ${
+                  isHidden ? 'bg-slate-100 opacity-60' : 'bg-white hover:border-[#8198ed]'
+                }`}
+              >
+                {/* Hide / Show Status Badge */}
+                <button
+                  type="button"
+                  onClick={(e) => handleToggleHide(s.id, e)}
+                  title={isHidden ? 'Click to show in photobooth' : 'Click to hide from photobooth'}
+                  className={`absolute top-1 right-1 text-[8px] p-0.5 rounded flex items-center gap-0.5 font-pixel transition-all ${
+                    isHidden
+                      ? 'bg-rose-100 text-rose-600 hover:bg-rose-200'
+                      : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                  }`}
+                >
+                  <span>{isHidden ? '🙈' : '👁️'}</span>
+                </button>
+
+                <div className="h-16 w-full flex items-center justify-center bg-[#f8fafc] rounded-lg p-1.5 mb-1.5 mt-2">
+                  <img src={s.src} alt={s.label} className="max-h-full max-w-full object-contain" />
+                </div>
+                <p className="font-pixel text-[8px] text-[#5b7fcb] truncate w-full">{s.label}</p>
               </div>
-              <p className="font-pixel text-[8px] text-[#5b7fcb] truncate w-full">{s.label}</p>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -151,25 +188,45 @@ export default function StickersTab({ onStickersChange }: { onStickersChange?: (
           </div>
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-9 gap-3">
-            {customStickers.map((s) => (
-              <div
-                key={s.id}
-                className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs flex flex-col items-center justify-center text-center relative group hover:border-[#8198ed] transition-all"
-              >
-                <div className="h-16 w-full flex items-center justify-center bg-[#f8fafc] rounded-lg p-1.5 mb-1.5">
-                  <img src={s.src} alt={s.label} className="max-h-full max-w-full object-contain" />
-                </div>
-                <p className="font-pixel text-[8px] text-[#5b7fcb] truncate w-full">{s.label}</p>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(s.id)}
-                  title="Delete sticker"
-                  className="absolute top-1.5 right-1.5 size-5 bg-red-100 hover:bg-red-200 text-red-600 rounded-full flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+            {customStickers.map((s) => {
+              const isHidden = hiddenIds.has(s.id)
+              return (
+                <div
+                  key={s.id}
+                  className={`p-2.5 rounded-xl border border-slate-200 shadow-xs flex flex-col items-center justify-between text-center relative group transition-all ${
+                    isHidden ? 'bg-slate-100 opacity-60' : 'bg-white hover:border-[#8198ed]'
+                  }`}
                 >
-                  ✕
-                </button>
-              </div>
-            ))}
+                  <div className="absolute top-1 right-1 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleHide(s.id, e)}
+                      title={isHidden ? 'Click to show in photobooth' : 'Click to hide from photobooth'}
+                      className={`text-[8px] p-0.5 rounded flex items-center gap-0.5 font-pixel transition-all ${
+                        isHidden
+                          ? 'bg-rose-100 text-rose-600 hover:bg-rose-200'
+                          : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                      }`}
+                    >
+                      <span>{isHidden ? '🙈' : '👁️'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(s.id)}
+                      title="Delete sticker"
+                      className="size-4 bg-red-100 hover:bg-red-200 text-red-600 rounded-full flex items-center justify-center text-[9px] opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="h-16 w-full flex items-center justify-center bg-[#f8fafc] rounded-lg p-1.5 mb-1.5 mt-2">
+                    <img src={s.src} alt={s.label} className="max-h-full max-w-full object-contain" />
+                  </div>
+                  <p className="font-pixel text-[8px] text-[#5b7fcb] truncate w-full">{s.label}</p>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

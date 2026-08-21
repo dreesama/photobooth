@@ -3,6 +3,8 @@ import {
   getCustomBackgrounds,
   saveCustomBackground,
   deleteCustomBackground,
+  getHiddenAssets,
+  toggleHideAsset,
   type CustomBackground,
 } from '../../lib/db'
 import { BUILTIN_BACKGROUNDS, preloadBackgrounds } from '../../lib/strip'
@@ -10,6 +12,7 @@ import ImageCropperModal from './ImageCropperModal'
 
 export default function BackgroundsTab({ onBackgroundsChange }: { onBackgroundsChange?: () => void }) {
   const [customBgs, setCustomBgs] = useState<CustomBackground[]>([])
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
   const [rawImageForCrop, setRawImageForCrop] = useState<string | null>(null)
   const [croppedUrl, setCroppedUrl] = useState<string | null>(null)
   const [label, setLabel] = useState('')
@@ -17,8 +20,12 @@ export default function BackgroundsTab({ onBackgroundsChange }: { onBackgroundsC
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const loadData = async () => {
-    const data = await getCustomBackgrounds()
+    const [data, hiddenAssets] = await Promise.all([
+      getCustomBackgrounds(),
+      getHiddenAssets(),
+    ])
     setCustomBgs(data)
+    setHiddenIds(new Set(hiddenAssets.backgrounds || []))
     await preloadBackgrounds()
     onBackgroundsChange?.()
   }
@@ -26,6 +33,12 @@ export default function BackgroundsTab({ onBackgroundsChange }: { onBackgroundsC
   useEffect(() => {
     loadData()
   }, [])
+
+  const handleToggleHide = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    await toggleHideAsset('backgrounds', id)
+    await loadData()
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -102,7 +115,7 @@ export default function BackgroundsTab({ onBackgroundsChange }: { onBackgroundsC
             Event Backgrounds & Frame Overlays
           </h2>
           <p className="font-pixel text-[9px] text-[#8792c4] mt-0.5">
-            Upload custom branded border graphics with interactive zoom, pan & photo cutout alignment.
+            Upload custom branded border graphics. Click 👁️/🙈 to hide or show in photobooth editor.
           </p>
         </div>
 
@@ -127,23 +140,42 @@ export default function BackgroundsTab({ onBackgroundsChange }: { onBackgroundsC
           </span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-          {BUILTIN_BACKGROUNDS.filter((b) => b.url).map((b) => (
-            <div
-              key={b.id}
-              className="bg-white p-2 rounded-xl border border-slate-200 shadow-xs flex flex-col items-center justify-between text-center group hover:border-[#8198ed] transition-all"
-            >
-              <div className="w-full aspect-[2/3] flex items-center justify-center bg-[#f8fafc] rounded-lg p-1 mb-2 overflow-hidden shadow-inner">
-                <img
-                  src={b.url!}
-                  alt={b.label || b.id}
-                  className="h-full w-full object-cover rounded"
-                />
+          {BUILTIN_BACKGROUNDS.filter((b) => b.url).map((b) => {
+            const isHidden = hiddenIds.has(b.id)
+            return (
+              <div
+                key={b.id}
+                className={`p-2 rounded-xl border border-slate-200 shadow-xs flex flex-col items-center justify-between text-center relative group transition-all ${
+                  isHidden ? 'bg-slate-100 opacity-60' : 'bg-white hover:border-[#8198ed]'
+                }`}
+              >
+                {/* Hide / Show Status Badge */}
+                <button
+                  type="button"
+                  onClick={(e) => handleToggleHide(b.id, e)}
+                  title={isHidden ? 'Click to show in photobooth' : 'Click to hide from photobooth'}
+                  className={`absolute top-1.5 right-1.5 text-[8px] px-1.5 py-0.5 rounded flex items-center gap-0.5 font-pixel transition-all z-10 ${
+                    isHidden
+                      ? 'bg-rose-100 text-rose-600 hover:bg-rose-200'
+                      : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                  }`}
+                >
+                  <span>{isHidden ? '🙈' : '👁️'}</span>
+                </button>
+
+                <div className="w-full aspect-[2/3] flex items-center justify-center bg-[#f8fafc] rounded-lg p-1 mb-2 overflow-hidden shadow-inner mt-4">
+                  <img
+                    src={b.url!}
+                    alt={b.label || b.id}
+                    className="h-full w-full object-cover rounded"
+                  />
+                </div>
+                <p className="font-pixel text-[8px] sm:text-[9px] text-[#5b7fcb] truncate w-full">
+                  {b.label || b.id}
+                </p>
               </div>
-              <p className="font-pixel text-[8px] sm:text-[9px] text-[#5b7fcb] truncate w-full">
-                {b.label || b.id}
-              </p>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -166,25 +198,51 @@ export default function BackgroundsTab({ onBackgroundsChange }: { onBackgroundsC
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-            {customBgs.map((b) => (
-              <div
-                key={b.id}
-                className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs flex flex-col items-center justify-between text-center relative group hover:border-[#8198ed] transition-all"
-              >
-                <div className="w-full aspect-[2/3] flex items-center justify-center bg-[#f8fafc] rounded-lg p-1 mb-2 overflow-hidden shadow-inner">
-                  <img src={b.url} alt={b.label} className="h-full w-full object-cover rounded" />
-                </div>
-                <p className="font-pixel text-[9px] text-[#5b7fcb] truncate w-full">{b.label}</p>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(b.id)}
-                  title="Delete frame"
-                  className="absolute top-2 right-2 size-6 bg-red-100 hover:bg-red-200 text-red-600 rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+            {customBgs.map((b) => {
+              const isHidden = hiddenIds.has(b.id)
+              return (
+                <div
+                  key={b.id}
+                  className={`p-2 rounded-xl border border-slate-200 shadow-xs flex flex-col items-center justify-between text-center relative group transition-all ${
+                    isHidden ? 'bg-slate-100 opacity-60' : 'bg-white hover:border-[#8198ed]'
+                  }`}
                 >
-                  ✕
-                </button>
-              </div>
-            ))}
+                  <div className="absolute top-1.5 right-1.5 flex items-center gap-1 z-10">
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleHide(b.id, e)}
+                      title={isHidden ? 'Click to show in photobooth' : 'Click to hide from photobooth'}
+                      className={`text-[8px] px-1.5 py-0.5 rounded flex items-center gap-0.5 font-pixel transition-all ${
+                        isHidden
+                          ? 'bg-rose-100 text-rose-600 hover:bg-rose-200'
+                          : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                      }`}
+                    >
+                      <span>{isHidden ? '🙈' : '👁️'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(b.id)}
+                      title="Delete frame"
+                      className="size-5 bg-red-100 hover:bg-red-200 text-red-600 rounded-full flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="w-full aspect-[2/3] flex items-center justify-center bg-[#f8fafc] rounded-lg p-1 mb-2 overflow-hidden shadow-inner mt-4">
+                    <img
+                      src={b.url}
+                      alt={b.label}
+                      className="h-full w-full object-cover rounded"
+                    />
+                  </div>
+                  <p className="font-pixel text-[8px] sm:text-[9px] text-[#5b7fcb] truncate w-full">
+                    {b.label}
+                  </p>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

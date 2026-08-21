@@ -1,10 +1,18 @@
 import { useState, useEffect, useRef } from 'react'
-import { getCustomProps, saveCustomProp, deleteCustomProp, type CustomProp } from '../../lib/db'
+import {
+  getCustomProps,
+  saveCustomProp,
+  deleteCustomProp,
+  getHiddenAssets,
+  toggleHideAsset,
+  type CustomProp,
+} from '../../lib/db'
 import { BUILTIN_PROPS, loadProps, type PropAnchor, type PropDef } from '../../lib/props'
 import ImageCropperModal from './ImageCropperModal'
 
 export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void }) {
   const [customProps, setCustomProps] = useState<CustomProp[]>([])
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [rawImageForCrop, setRawImageForCrop] = useState<string | null>(null)
   const [label, setLabel] = useState('')
@@ -15,8 +23,12 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const loadData = async () => {
-    const data = await getCustomProps()
+    const [data, hiddenAssets] = await Promise.all([
+      getCustomProps(),
+      getHiddenAssets(),
+    ])
     setCustomProps(data)
+    setHiddenIds(new Set(hiddenAssets.props || []))
     await loadProps()
     onPropsChange?.()
   }
@@ -24,6 +36,12 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
   useEffect(() => {
     loadData()
   }, [])
+
+  const handleToggleHide = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    await toggleHideAsset('props', id)
+    await loadData()
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -103,7 +121,7 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
             AR Wearable Props & Filters
           </h2>
           <p className="font-pixel text-[9px] text-[#8792c4] mt-0.5">
-            Wearable props dynamically anchor and track faces in the live camera booth.
+            Wearable props dynamically anchor and track faces in the live camera booth. Click 👁️/🙈 to hide or show in photobooth.
           </p>
         </div>
 
@@ -123,22 +141,41 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
           Built-in Props ({BUILTIN_PROPS.length - 1})
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
-          {BUILTIN_PROPS.filter((p) => p.src).map((p) => (
-            <div
-              key={p.id}
-              className="bg-white p-2.5 rounded-lg bevel-in flex flex-col items-center justify-between text-center group"
-            >
-              <div className="h-20 w-full flex items-center justify-center bg-[#f8fafc] rounded p-1 mb-2">
-                <img src={p.src!} alt={p.label} className="max-h-full max-w-full object-contain" />
+          {BUILTIN_PROPS.filter((p) => p.src).map((p) => {
+            const isHidden = hiddenIds.has(p.id)
+            return (
+              <div
+                key={p.id}
+                className={`p-2.5 rounded-lg bevel-in flex flex-col items-center justify-between text-center relative group transition-all ${
+                  isHidden ? 'bg-slate-100 opacity-60' : 'bg-white'
+                }`}
+              >
+                {/* Hide / Show Status Badge */}
+                <button
+                  type="button"
+                  onClick={(e) => handleToggleHide(p.id, e)}
+                  title={isHidden ? 'Click to show in photobooth' : 'Click to hide from photobooth'}
+                  className={`absolute top-1.5 right-1.5 text-xs px-1.5 py-0.5 rounded flex items-center gap-1 font-pixel text-[8px] transition-all ${
+                    isHidden
+                      ? 'bg-rose-100 text-rose-600 hover:bg-rose-200'
+                      : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                  }`}
+                >
+                  <span>{isHidden ? '🙈 Hidden' : '👁️ Active'}</span>
+                </button>
+
+                <div className="h-20 w-full flex items-center justify-center bg-[#f8fafc] rounded p-1 mb-2 mt-4">
+                  <img src={p.src!} alt={p.label} className="max-h-full max-w-full object-contain" />
+                </div>
+                <div>
+                  <p className="font-pixel text-[9px] text-[#5b7fcb] font-bold">{p.label}</p>
+                  <span className="font-mono text-[9px] text-slate-400 uppercase bg-slate-100 px-1.5 py-0.5 rounded mt-1 inline-block">
+                    {p.anchor || 'forehead'}
+                  </span>
+                </div>
               </div>
-              <div>
-                <p className="font-pixel text-[9px] text-[#5b7fcb] font-bold">{p.label}</p>
-                <span className="font-mono text-[9px] text-slate-400 uppercase bg-slate-100 px-1.5 py-0.5 rounded mt-1 inline-block">
-                  {p.anchor || 'forehead'}
-                </span>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -164,29 +201,50 @@ export default function PropsTab({ onPropsChange }: { onPropsChange?: () => void
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
-            {customProps.map((p) => (
-              <div
-                key={p.id}
-                className="bg-white p-2.5 rounded-lg bevel-in flex flex-col items-center justify-between text-center relative group"
-              >
-                <div className="h-20 w-full flex items-center justify-center bg-[#f8fafc] rounded p-1 mb-2">
-                  <img src={p.src} alt={p.label} className="max-h-full max-w-full object-contain" />
-                </div>
-                <div>
-                  <p className="font-pixel text-[9px] text-[#5b7fcb] font-bold">{p.label}</p>
-                  <span className="font-mono text-[9px] text-[#8198ed] bg-[#eef2ff] px-1.5 py-0.5 rounded mt-1 inline-block">
-                    {p.anchor}
-                  </span>
-                </div>
-                <button
-                  onClick={() => handleDelete(p.id)}
-                  title="Delete prop"
-                  className="absolute top-1 right-1 text-xs p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+            {customProps.map((p) => {
+              const isHidden = hiddenIds.has(p.id)
+              return (
+                <div
+                  key={p.id}
+                  className={`p-2.5 rounded-lg bevel-in flex flex-col items-center justify-between text-center relative group transition-all ${
+                    isHidden ? 'bg-slate-100 opacity-60' : 'bg-white'
+                  }`}
                 >
-                  ✕
-                </button>
-              </div>
-            ))}
+                  {/* Hide Toggle & Delete Actions */}
+                  <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleHide(p.id, e)}
+                      title={isHidden ? 'Click to show in photobooth' : 'Click to hide from photobooth'}
+                      className={`text-xs px-1.5 py-0.5 rounded flex items-center gap-0.5 font-pixel text-[8px] transition-all ${
+                        isHidden
+                          ? 'bg-rose-100 text-rose-600 hover:bg-rose-200'
+                          : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                      }`}
+                    >
+                      <span>{isHidden ? '🙈 Hidden' : '👁️ Active'}</span>
+                    </button>
+                    <button
+                      onClick={() => handleDelete(p.id)}
+                      title="Delete prop"
+                      className="text-xs p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="h-20 w-full flex items-center justify-center bg-[#f8fafc] rounded p-1 mb-2 mt-4">
+                    <img src={p.src} alt={p.label} className="max-h-full max-w-full object-contain" />
+                  </div>
+                  <div>
+                    <p className="font-pixel text-[9px] text-[#5b7fcb] font-bold">{p.label}</p>
+                    <span className="font-mono text-[9px] text-[#8198ed] bg-[#eef2ff] px-1.5 py-0.5 rounded mt-1 inline-block">
+                      {p.anchor}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

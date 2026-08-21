@@ -6,6 +6,7 @@ import {
   LOGOS,
   TEXT_COLORS,
   preloadBackgrounds,
+  reloadBackgrounds,
   composeStrip,
   stripSize,
   type Background,
@@ -13,7 +14,7 @@ import {
   type LogoLang,
   type Template,
 } from '../../lib/strip'
-import { STICKERS, loadStickers, type PlacedSticker } from '../../lib/stickers'
+import { STICKERS, loadStickers, type PlacedSticker, type StickerDef } from '../../lib/stickers'
 import { saveToArchive, saveActiveSessionState, getActiveSessionState } from '../../lib/db'
 import { uploadPhotoStrip } from '../../lib/upload'
 
@@ -42,14 +43,22 @@ export default function Editor({ frames, template, onRetake }: Props) {
   const [qrError, setQrError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
+  const [bgsList, setBgsList] = useState<Background[]>(BACKGROUNDS)
+  const [stickersList, setStickersList] = useState<StickerDef[]>(STICKERS)
+
   const stageRef = useRef<HTMLDivElement | null>(null)
   const drag = useRef<{ uid: string } | null>(null)
 
   useEffect(() => {
-    preloadBackgrounds()
-    loadStickers()
-    BACKGROUNDS.forEach((b) => {
-      if (b._img && !b._img.complete) b._img.onload = () => setReady((r) => r + 1)
+    reloadBackgrounds(false).then((loadedBgs) => {
+      setBgsList(loadedBgs)
+      loadedBgs.forEach((b) => {
+        if (b._img && !b._img.complete) b._img.onload = () => setReady((r) => r + 1)
+      })
+    })
+
+    loadStickers(false).then((loadedStickers) => {
+      setStickersList(loadedStickers)
     })
 
     // Restore customization states if session exists
@@ -385,7 +394,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
             </button>
 
             {/* Pattern/Frame image backgrounds */}
-            {BACKGROUNDS.filter((b) => b.kind === 'image' && b.url).map((b) => (
+            {bgsList.filter((b) => b.kind === 'image' && b.url).map((b) => (
               <button
                 key={b.id}
                 onClick={() => setBg(b)}
@@ -417,7 +426,7 @@ export default function Editor({ frames, template, onRetake }: Props) {
             </button>
 
             {/* Stickers List */}
-            {STICKERS.map((s) => {
+            {stickersList.map((s) => {
               const isPlaced = stickers.some((st) => st.src === s.src)
               return (
                 <button

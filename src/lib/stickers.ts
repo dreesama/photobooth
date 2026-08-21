@@ -8,7 +8,7 @@ import s6 from '../imports/OmoideCam-4/e4f5397eea5199258f19cbfb53cef050db0a4fb9.
 import s7 from '../imports/OmoideCam-4/821d2968f5a1882f034b03e8488d913c097b295a.png'
 import s8 from '../imports/OmoideCam-4/5a18eee46d47840055fc98ba07b68922782409b5.png'
 import s9 from '../imports/OmoideCam-4/bbbfec1a9a763836c989ead3116814d0d1f9c0f3.png'
-import { getCustomStickers, type CustomSticker } from './db'
+import { getCustomStickers, getHiddenAssets, type CustomSticker } from './db'
 
 export type StickerDef = {
   id: string
@@ -16,6 +16,7 @@ export type StickerDef = {
   label: string
   category?: string
   isCustom?: boolean
+  isHidden?: boolean
 }
 
 export const BUILTIN_STICKERS: StickerDef[] = [
@@ -44,10 +45,19 @@ export type PlacedSticker = {
 // Preload sticker art so it can be composited synchronously at export time.
 const cache = new Map<string, HTMLImageElement>()
 
-export async function loadStickers(): Promise<StickerDef[]> {
+export async function loadStickers(includeHidden = false): Promise<StickerDef[]> {
   try {
-    const custom = await getCustomStickers()
-    STICKERS = [...BUILTIN_STICKERS, ...custom]
+    const [custom, hiddenAssets] = await Promise.all([
+      getCustomStickers(),
+      getHiddenAssets(),
+    ])
+    const hiddenSet = new Set(hiddenAssets.stickers || [])
+    const all = [...BUILTIN_STICKERS, ...custom].map((s) => ({
+      ...s,
+      isHidden: hiddenSet.has(s.id),
+    }))
+
+    STICKERS = includeHidden ? all : all.filter((s) => !s.isHidden)
   } catch {
     STICKERS = [...BUILTIN_STICKERS]
   }

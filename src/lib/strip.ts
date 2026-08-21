@@ -86,7 +86,7 @@ export const TEXT_COLORS = [
   { id: 'gold', label: 'Warm Gold', color: '#e09f3e' },
 ]
 
-import { getCustomBackgrounds, type CustomBackground } from './db'
+import { getCustomBackgrounds, getHiddenAssets, type CustomBackground } from './db'
 
 /* ---------------- Backgrounds (frame) ---------------- */
 export type BgKind = 'none' | 'image'
@@ -97,6 +97,7 @@ export type Background = {
   url?: string
   _img?: HTMLImageElement
   isCustom?: boolean
+  isHidden?: boolean
 }
 
 export const BUILTIN_BACKGROUNDS: Background[] = [
@@ -116,9 +117,13 @@ export const BUILTIN_BACKGROUNDS: Background[] = [
 
 export let BACKGROUNDS: Background[] = [...BUILTIN_BACKGROUNDS]
 
-export async function reloadBackgrounds(): Promise<Background[]> {
+export async function reloadBackgrounds(includeHidden = false): Promise<Background[]> {
   try {
-    const customBgs = await getCustomBackgrounds()
+    const [customBgs, hiddenAssets] = await Promise.all([
+      getCustomBackgrounds(),
+      getHiddenAssets(),
+    ])
+    const hiddenSet = new Set(hiddenAssets.backgrounds || [])
     const mappedCustom: Background[] = customBgs.map((c: CustomBackground) => ({
       id: c.id,
       label: c.label,
@@ -126,7 +131,13 @@ export async function reloadBackgrounds(): Promise<Background[]> {
       url: c.url,
       isCustom: true,
     }))
-    BACKGROUNDS = [...BUILTIN_BACKGROUNDS, ...mappedCustom]
+
+    const all = [...BUILTIN_BACKGROUNDS, ...mappedCustom].map((b) => ({
+      ...b,
+      isHidden: hiddenSet.has(b.id),
+    }))
+
+    BACKGROUNDS = includeHidden ? all : all.filter((b) => b.id === 'none' || !b.isHidden)
   } catch {
     BACKGROUNDS = [...BUILTIN_BACKGROUNDS]
   }

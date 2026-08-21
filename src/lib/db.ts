@@ -386,3 +386,66 @@ export async function clearActiveSessionState(): Promise<void> {
   }
 }
 
+/* ================= HIDDEN ASSETS (PROPS, STICKERS, FRAMES) ================= */
+
+export type HiddenAssets = {
+  props: string[]
+  stickers: string[]
+  backgrounds: string[]
+}
+
+export const DEFAULT_HIDDEN_ASSETS: HiddenAssets = {
+  props: [],
+  stickers: [],
+  backgrounds: [],
+}
+
+export async function getHiddenAssets(): Promise<HiddenAssets> {
+  try {
+    const db = await openDB()
+    return new Promise((resolve) => {
+      const tx = db.transaction('settings', 'readonly')
+      const store = tx.objectStore('settings')
+      const req = store.get('hidden_assets')
+      req.onsuccess = () => {
+        if (req.result && req.result.data) {
+          resolve({
+            props: Array.isArray(req.result.data.props) ? req.result.data.props : [],
+            stickers: Array.isArray(req.result.data.stickers) ? req.result.data.stickers : [],
+            backgrounds: Array.isArray(req.result.data.backgrounds) ? req.result.data.backgrounds : [],
+          })
+        } else {
+          resolve(DEFAULT_HIDDEN_ASSETS)
+        }
+      }
+      req.onerror = () => resolve(DEFAULT_HIDDEN_ASSETS)
+    })
+  } catch {
+    return DEFAULT_HIDDEN_ASSETS
+  }
+}
+
+export async function toggleHideAsset(
+  type: 'props' | 'stickers' | 'backgrounds',
+  id: string
+): Promise<boolean> {
+  const current = await getHiddenAssets()
+  const list = current[type] || []
+  const isHidden = list.includes(id)
+  const updatedList = isHidden ? list.filter((item) => item !== id) : [...list, id]
+  const updated: HiddenAssets = {
+    ...current,
+    [type]: updatedList,
+  }
+
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('settings', 'readwrite')
+    const store = tx.objectStore('settings')
+    const req = store.put({ key: 'hidden_assets', data: updated })
+    req.onsuccess = () => resolve(!isHidden)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+

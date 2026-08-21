@@ -343,6 +343,13 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
                     >
                       ✨
                     </button>
+                    <button
+                      onClick={(e) => handleDelete(item.id, e)}
+                      title="Delete Photo"
+                      className="text-xs p-1 hover:bg-red-50 text-red-500 rounded"
+                    >
+                      🗑️
+                    </button>
                   </div>
                 </div>
               </div>
