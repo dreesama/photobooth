@@ -92,8 +92,8 @@ export default function ImageCropperModal({
     canvas.height = exportHeight
     const ctx = canvas.getContext('2d')!
 
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, exportWidth, exportHeight)
+    // Clear canvas completely to preserve 100% transparent PNG sprites
+    ctx.clearRect(0, 0, exportWidth, exportHeight)
 
     ctx.save()
     ctx.translate(exportWidth / 2, exportHeight / 2)
@@ -136,13 +136,17 @@ export default function ImageCropperModal({
           onWheel={onWheel}
           className="relative flex-1 bg-[#23293e] flex items-center justify-center overflow-hidden p-4 min-h-[320px] select-none"
         >
-          {/* Crop Viewport Box */}
+          {/* Crop Viewport Box with Transparency Checkerboard */}
           <div
-            className="relative overflow-hidden border-2 border-[#8198ed] shadow-2xl bg-slate-900 cursor-grab active:cursor-grabbing"
+            className="relative overflow-hidden border-2 border-[#8198ed] shadow-2xl cursor-grab active:cursor-grabbing"
             style={{
               width: '260px',
               height: `${260 / aspect}px`,
               maxHeight: '440px',
+              backgroundImage:
+                'linear-gradient(45deg, #1e293b 25%, #0f172a 25%), linear-gradient(-45deg, #1e293b 25%, #0f172a 25%), linear-gradient(45deg, #0f172a 75%, #1e293b 75%), linear-gradient(-45deg, #0f172a 75%, #1e293b 75%)',
+              backgroundSize: '16px 16px',
+              backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
             }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
