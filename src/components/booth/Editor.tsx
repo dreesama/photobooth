@@ -280,9 +280,9 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selected])
 
-  const download = async () => {
+  const download = () => {
     try {
-      const c = await composeStripAsync({
+      const c = composeStrip({
         frames,
         template,
         filter,
@@ -294,12 +294,45 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
         textColor,
         fontStyle,
       })
-      const stripDataUrl = c.toDataURL('image/png')
 
-      // Save to local archive
-      await saveToArchive({
+      const dataUrl = c.toDataURL('image/png')
+      const fileName = `itguild-${Date.now()}.png`
+
+      // Convert base64 dataUrl to native Blob for 100% reliable desktop downloading
+      try {
+        const byteString = atob(dataUrl.split(',')[1])
+        const mimeString = dataUrl.split(',')[0].split(':')[1].split(';')[0]
+        const ab = new ArrayBuffer(byteString.length)
+        const ia = new Uint8Array(ab)
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i)
+        }
+        const blob = new Blob([ab], { type: mimeString })
+        const blobUrl = URL.createObjectURL(blob)
+
+        const link = document.createElement('a')
+        link.href = blobUrl
+        link.download = fileName
+        document.body.appendChild(link)
+        link.click()
+        setTimeout(() => {
+          document.body.removeChild(link)
+          URL.revokeObjectURL(blobUrl)
+        }, 1000)
+      } catch (blobErr) {
+        // Fallback for restricted webview environments
+        const link = document.createElement('a')
+        link.href = dataUrl
+        link.download = fileName
+        document.body.appendChild(link)
+        link.click()
+        setTimeout(() => document.body.removeChild(link), 300)
+      }
+
+      // Save to local archive in background
+      saveToArchive({
         id: archiveSessionIdRef.current,
-        stripDataUrl,
+        stripDataUrl: dataUrl,
         rawFrames: rawFramesDataUrls,
         templateId: template.id,
         filter,
@@ -307,33 +340,9 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
         stickers,
         customText,
         textColor,
-      }).catch(() => {})
-
-      // Universal Reliable Blob Download
-      c.toBlob((blob) => {
-        if (!blob) {
-          const a = document.createElement('a')
-          a.href = stripDataUrl
-          a.download = `itguild-${Date.now()}.png`
-          document.body.appendChild(a)
-          a.click()
-          setTimeout(() => document.body.removeChild(a), 500)
-          return
-        }
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.style.display = 'none'
-        a.href = url
-        a.download = `itguild-${Date.now()}.png`
-        document.body.appendChild(a)
-        a.click()
-        setTimeout(() => {
-          document.body.removeChild(a)
-          URL.revokeObjectURL(url)
-        }, 1500)
-      }, 'image/png')
+      }).catch((e) => console.warn('Archive save error:', e))
     } catch (e) {
-      console.warn('Archive save error:', e)
+      console.warn('Download error:', e)
     }
   }
 

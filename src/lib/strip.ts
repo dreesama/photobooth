@@ -96,12 +96,9 @@ export type FontOption = {
 }
 
 export const FONT_OPTIONS: FontOption[] = [
-  { id: 'pixel', label: '8-Bit Pixel', family: '"Press Start 2P", monospace', sample: 'PIXEL', size: 44 },
-  { id: 'digital', label: 'Retro CRT', family: '"VT323", monospace', sample: 'Retro', size: 68 },
-  { id: 'handwritten', label: 'Handwritten', family: '"Caveat", cursive', sample: 'Lovely', size: 64 },
-  { id: 'bubble', label: 'Cute Bubble', family: '"Fredoka", sans-serif', sample: 'Bubble', size: 52 },
-  { id: 'bold', label: 'Modern Bold', family: '"Montserrat", sans-serif', sample: 'Bold', size: 48 },
-  { id: 'typewriter', label: 'Typewriter', family: '"Special Elite", monospace', sample: 'Type', size: 46 },
+  { id: 'pixel', label: 'Pixel', family: '"Press Start 2P", monospace', sample: 'PIXEL', size: 44 },
+  { id: 'montserrat', label: 'Montserrat', family: '"Montserrat", sans-serif', sample: 'Montserrat', size: 48 },
+  { id: 'inter', label: 'Inter Bold', family: '"Inter", sans-serif', sample: 'Inter Bold', size: 48 },
 ]
 
 import { getCustomBackgrounds, getHiddenAssets, type CustomBackground } from './db'
@@ -321,8 +318,9 @@ export async function composeStripAsync(opts: ComposeOpts): Promise<HTMLCanvasEl
     if (bgImg && !bgImg.complete) {
       promises.push(
         new Promise((resolve) => {
-          bgImg.onload = resolve
-          bgImg.onerror = resolve
+          const t = setTimeout(resolve, 200)
+          bgImg.addEventListener('load', () => { clearTimeout(t); resolve(null) }, { once: true })
+          bgImg.addEventListener('error', () => { clearTimeout(t); resolve(null) }, { once: true })
         })
       )
     }
@@ -333,8 +331,9 @@ export async function composeStripAsync(opts: ComposeOpts): Promise<HTMLCanvasEl
     if (im && !im.complete) {
       promises.push(
         new Promise((resolve) => {
-          im.onload = resolve
-          im.onerror = resolve
+          const t = setTimeout(resolve, 200)
+          im.addEventListener('load', () => { clearTimeout(t); resolve(null) }, { once: true })
+          im.addEventListener('error', () => { clearTimeout(t); resolve(null) }, { once: true })
         })
       )
     }
