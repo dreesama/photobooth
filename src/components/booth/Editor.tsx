@@ -691,14 +691,9 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
 
         {/* ---- 3. Stickers ---- */}
         <section>
-          <div className="flex items-center justify-between mb-3 max-w-[620px]">
-            <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider select-none">
-              Stickers
-            </h3>
-            <span className="font-pixel text-[8px] sm:text-[9px] text-[#8792c4]">
-              Top 10 Recent / Popular
-            </span>
-          </div>
+          <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
+            Stickers
+          </h3>
 
           <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5 sm:gap-3 max-w-[620px]">
             {/* Clear All Stickers Button */}
@@ -716,16 +711,10 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
             <button
               type="button"
               onClick={() => setShowFolderModal(true)}
-              className="relative size-16 sm:size-20 rounded-xl bg-gradient-to-tr from-[#5b6fbc] to-[#8198ed] text-white border-2 border-white/60 hover:border-white hover:scale-105 active:scale-95 flex flex-col items-center justify-center p-1.5 transition-all cursor-pointer shadow-md group"
-              title="Browse all sticker packs and folders (MLBB, Valorant, etc.)"
+              className="relative size-16 sm:size-20 rounded-xl bg-gradient-to-tr from-[#5b6fbc] to-[#8198ed] text-white border-2 border-white/60 hover:border-white hover:scale-105 active:scale-95 flex items-center justify-center transition-all cursor-pointer shadow-md group"
+              title="Browse sticker folders (MLBB, Valorant, etc.)"
             >
-              <Folder className="w-5 h-5 sm:w-6 sm:h-6 mb-0.5 text-white group-hover:scale-110 transition-transform" />
-              <span className="font-pixel text-[8px] sm:text-[9px] text-white leading-tight font-bold text-center">
-                + Packs
-              </span>
-              <span className="font-mono text-[7px] text-white/80 mt-0.5">
-                All ({stickersList.length})
-              </span>
+              <Folder className="w-7 h-7 sm:w-8 sm:h-8 text-white group-hover:scale-110 transition-transform drop-shadow-sm" />
             </button>
 
             {/* Top 10 Most / Recently Used Stickers */}
