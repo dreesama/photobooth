@@ -490,6 +490,57 @@ export async function deleteStickerFolder(folderName: string): Promise<string[]>
   return filtered
 }
 
+export async function getStickerConfigs(): Promise<Record<string, { category?: string }>> {
+  try {
+    const db = await openDB()
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('settings', 'readonly')
+        const store = tx.objectStore('settings')
+        const req = store.get('sticker_configs')
+        req.onsuccess = () => resolve((req.result && req.result.data) || {})
+        req.onerror = () => resolve({})
+      } catch {
+        resolve({})
+      }
+    })
+  } catch {
+    return {}
+  }
+}
+
+export async function updateStickerCategory(id: string, newCategory: string): Promise<void> {
+  const isCustom = id.startsWith('custom_sticker_')
+  if (isCustom) {
+    const db = await openDB()
+    const current: CustomSticker | undefined = await new Promise((resolve) => {
+      const tx = db.transaction('custom_stickers', 'readonly')
+      const store = tx.objectStore('custom_stickers')
+      const req = store.get(id)
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => resolve(undefined)
+    })
+    if (current) {
+      await saveCustomSticker({
+        ...current,
+        category: newCategory,
+      })
+    }
+  }
+
+  // Also save to sticker_configs override store
+  const allConfigs = await getStickerConfigs()
+  allConfigs[id] = { ...(allConfigs[id] || {}), category: newCategory }
+  const db = await openDB()
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction('settings', 'readwrite')
+    const store = tx.objectStore('settings')
+    const req = store.put({ key: 'sticker_configs', data: allConfigs })
+    req.onsuccess = () => resolve()
+    req.onerror = () => resolve()
+  })
+}
+
 export type StickerUsageRecord = { count: number; lastUsed: number }
 
 export function getStickerUsageMap(): Record<string, StickerUsageRecord> {

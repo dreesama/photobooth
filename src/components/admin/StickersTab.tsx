@@ -22,6 +22,7 @@ import {
   getStickerFolders,
   saveStickerFolder,
   deleteStickerFolder,
+  updateStickerCategory,
   type CustomSticker,
 } from '../../lib/db'
 import { BUILTIN_STICKERS, loadStickers, type StickerDef } from '../../lib/stickers'
@@ -200,6 +201,12 @@ export default function StickersTab({ onStickersChange }: { onStickersChange?: (
     if (fileInputRef.current) fileInputRef.current.value = ''
     await loadData()
     showToast(`✅ Sticker saved to folder "${finalCategory}"!`)
+  }
+
+  const handleMoveSticker = async (id: string, stickerLabel: string, newFolder: string) => {
+    await updateStickerCategory(id, newFolder)
+    await loadData()
+    showToast(`📁 Moved "${stickerLabel}" to folder "${newFolder}"`)
   }
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
@@ -396,9 +403,23 @@ export default function StickersTab({ onStickersChange }: { onStickersChange?: (
                     {s.label}
                   </p>
 
-                  <span className="font-mono text-[7px] text-[#8198ed] bg-[#eef2ff] px-1.5 py-0.5 rounded mt-1 truncate max-w-full">
-                    {s.category || 'Cute & Doodles'}
-                  </span>
+                  {/* Move Folder Quick Selector */}
+                  <div className="w-full mt-1.5">
+                    <select
+                      value={s.category || 'Cute & Doodles'}
+                      onChange={(e) => handleMoveSticker(s.id, s.label, e.target.value)}
+                      className="w-full bg-[#eef2ff] hover:bg-[#dfe7ff] text-[#5b7fcb] font-pixel text-[8px] px-1 py-1 rounded-md border border-[#cdd6f0] outline-none cursor-pointer text-center truncate transition-colors"
+                      title="Click to move sticker to another folder"
+                    >
+                      {allFolderTabs
+                        .filter((f) => f !== 'All')
+                        .map((folderName) => (
+                          <option key={folderName} value={folderName}>
+                            📁 {folderName}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
                 </div>
               )
             })}
