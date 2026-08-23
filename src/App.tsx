@@ -7,7 +7,23 @@ import ErrorBoundary from './components/ErrorBoundary'
 import PublicPortal from './components/PublicPortal'
 
 export default function App() {
-  const [view, setView] = useState<'desktop' | 'booth' | 'admin' | 'public'>('desktop')
+  const [view, setViewState] = useState<'desktop' | 'booth' | 'admin' | 'public'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('itguild_current_view') as any
+      if (saved && ['desktop', 'booth', 'admin', 'public'].includes(saved)) {
+        return saved
+      }
+    }
+    return 'desktop'
+  })
+
+  const setView = (newView: 'desktop' | 'booth' | 'admin' | 'public') => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('itguild_current_view', newView)
+    }
+    setViewState(newView)
+  }
+
   const [showPasscodeModal, setShowPasscodeModal] = useState(false)
   const [pendingAdminView, setPendingAdminView] = useState<'admin' | 'desktop'>('admin')
 
@@ -42,11 +58,16 @@ export default function App() {
       path === '/admin' ||
       path === '/itguild-admin'
 
+    const savedView = sessionStorage.getItem('itguild_current_view') as any
+
     if (isAdminAuthenticated()) {
-      setView(wantsAdmin ? 'admin' : 'desktop')
-    } else {
-      // Require master passcode on public deployment
-      setPendingAdminView(wantsAdmin ? 'admin' : 'desktop')
+      if (wantsAdmin) {
+        setView('admin')
+      } else if (savedView) {
+        setView(savedView)
+      }
+    } else if (wantsAdmin) {
+      setPendingAdminView('admin')
       setShowPasscodeModal(true)
     }
   }, [])

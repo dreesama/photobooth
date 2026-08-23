@@ -36,7 +36,7 @@ export default defineConfig(({ mode }) => {
       port: parseInt(process.env.PORT || '8443'),
       strictPort: false,
       allowedHosts: true,
-      watch: { ignored: ['**/.figma/**'] },
+      watch: { ignored: ['**/.figma/**', '**/.data/**', '**/dist/**', '**/*.json'] },
     },
     preview: {
       host: '0.0.0.0',

@@ -9,6 +9,7 @@ import {
   Camera,
   RotateCcw,
   Check,
+  Sparkles,
 } from 'lucide-react'
 import { useCamera } from '../../hooks/useCamera'
 import { useFaceLandmarker } from '../../hooks/useFaceLandmarker'
@@ -45,6 +46,82 @@ function playShutterSound() {
   }
 }
 
+/**
+ * Universal AR prop renderer for both 60fps live canvas overlay and high-res snapshot capture.
+ * Guarantees 100% exact alignment between preview and captured photo.
+ */
+export function drawPropOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  prop: PropDef | null,
+  metrics: FaceMetrics | undefined,
+  isMirrored = true
+) {
+  if (!prop || !prop.src) return
+  const im = propImage(prop.src)
+  if (!im || !im.complete || !im.naturalWidth) return
+
+  if (metrics && metrics.hasFace) {
+    const anchor = prop.anchor || 'forehead'
+    let pt = metrics.forehead
+    if (anchor === 'eyes') {
+      pt = metrics.eyeCenter
+    } else if (anchor === 'nose') {
+      pt = metrics.nose
+    } else if (anchor === 'ear') {
+      // Subject's right ear / hairpin (viewer's right in mirror)
+      pt = metrics.earLeft
+    } else if (anchor === 'ear-left') {
+      // Subject's left ear / hairpin (viewer's left in mirror)
+      pt = metrics.earRight
+    }
+
+    const offX = prop.offsetX ?? 0
+    const rawDisplayX = (isMirrored ? 1 - pt.x : pt.x) + (isMirrored ? -offX : offX)
+    const rawDisplayY = pt.y + (prop.offsetY ?? -0.02)
+
+    const px = rawDisplayX * width
+    const py = rawDisplayY * height
+
+    const isEar = anchor === 'ear' || anchor === 'ear-left'
+    const baseWidthRatio = isEar ? 0.22 : 0.4
+    const pw = width * baseWidthRatio * metrics.scale * (prop.scaleFactor ?? 1.3)
+    const ph = pw * (im.naturalHeight / im.naturalWidth)
+
+    // In mirrored display, head roll rotation matches mirrored orientation directly
+    const rotationDeg = isMirrored ? metrics.rotation : -metrics.rotation
+
+    ctx.save()
+    ctx.translate(px, py)
+    ctx.rotate((rotationDeg * Math.PI) / 180)
+
+    // Subtle 3D perspective pitch tilt squish:
+    if (metrics.pitch) {
+      const pitchSquish = 1 - Math.abs(metrics.pitch) * 0.003
+      ctx.scale(1, Math.max(0.85, Math.min(1.15, pitchSquish)))
+    }
+
+    ctx.drawImage(im, -pw / 2, -ph / 2, pw, ph)
+    ctx.restore()
+  } else {
+    // Default fallback position when no face is locked
+    const isEar = prop.anchor === 'ear' || prop.anchor === 'ear-left'
+    const baseWidth = width * (isEar ? 0.22 : 0.45)
+    const pw = baseWidth * (prop.scaleFactor ?? 1.3)
+    const ph = pw * (im.naturalHeight / im.naturalWidth)
+    const offX = prop.offsetX ?? 0
+    const defaultX = prop.anchor === 'ear-left' ? width * 0.24 : prop.anchor === 'ear' ? width * 0.76 : width * 0.5
+    const px = defaultX + (isMirrored ? -offX * width : offX * width)
+    const py = (isEar ? height * 0.32 : height * 0.18) + (prop.offsetY ?? 0) * height
+
+    ctx.save()
+    ctx.translate(px, py)
+    ctx.drawImage(im, -pw / 2, -ph / 2, pw, ph)
+    ctx.restore()
+  }
+}
+
 function snapshot(
   video: HTMLVideoElement,
   prop: PropDef,
@@ -53,7 +130,7 @@ function snapshot(
   const c = document.createElement('canvas')
   c.width = CAP_W
   c.height = CAP_H
-  const ctx = c.getContext('2d')!
+  const ctx = c.getContext('2d', { willReadFrequently: true })!
   const vw = video.videoWidth || CAP_W
   const vh = video.videoHeight || CAP_H
   const ratio = CAP_W / CAP_H
@@ -66,62 +143,44 @@ function snapshot(
   const sx = (vw - sw) / 2,
     sy = (vh - sh) / 2
 
-  // Draw mirrored video frame
+  // 1. Draw mirrored 4:3 cropped video frame
+  ctx.save()
   ctx.translate(CAP_W, 0)
   ctx.scale(-1, 1)
   ctx.drawImage(video, sx, sy, sw, sh, 0, 0, CAP_W, CAP_H)
+  ctx.restore()
 
-  const im = propImage(prop.src)
-  if (im && im.complete && im.naturalWidth) {
-    if (metrics && metrics.hasFace) {
-      const anchor = prop.anchor || 'forehead'
-      let pt = metrics.forehead
-      if (anchor === 'eyes') pt = metrics.eyeCenter
-      else if (anchor === 'nose') pt = metrics.nose
-      else if (anchor === 'ear') pt = { x: metrics.earLeft.x - 0.04, y: metrics.earLeft.y }
-
-      const px = pt.x * CAP_W
-      const py = (pt.y + (prop.offsetY || -0.15)) * CAP_H
-
-      const baseWidth = CAP_W * (anchor === 'ear' ? 0.24 : 0.38)
-      const pw = baseWidth * metrics.scale * (prop.scaleFactor || 1.3)
-      const ph = pw * (im.naturalHeight / im.naturalWidth)
-
-      ctx.save()
-      ctx.translate(px, py)
-      ctx.rotate((-metrics.rotation * Math.PI) / 180)
-      ctx.drawImage(im, -pw / 2, -ph / 2, pw, ph)
-      ctx.restore()
-    } else {
-      const pw = CAP_W * (prop.anchor === 'ear' ? 0.25 : 0.5)
-      const ph = pw * (im.naturalHeight / im.naturalWidth)
-      const px = prop.anchor === 'ear' ? CAP_W * 0.2 : (CAP_W - pw) / 2
-      ctx.drawImage(im, px, CAP_H * 0.1, pw, ph)
-    }
+  // 2. Draw prop with exact matching coordinate transformation
+  if (prop && prop.src) {
+    drawPropOnCanvas(ctx, CAP_W, CAP_H, prop, metrics, true)
   }
 
-  ctx.setTransform(1, 0, 0, 1, 0, 0)
   return c
 }
 
 export default function CameraStage({ template, onConfirm, onBack }: Props) {
   const { videoRef, status, start } = useCamera()
-  const { metrics } = useFaceLandmarker(videoRef, true)
+  const { metrics, metricsRef } = useFaceLandmarker(videoRef, true)
 
   const total = countFor(template)
   const [propsList, setPropsList] = useState<PropDef[]>(PROPS)
   const [prop, setProp] = useState<PropDef>(PROPS[0])
+  const propRef = useRef<PropDef>(prop)
+
   const [seconds, setSeconds] = useState(3)
   const [showTimerMenu, setShowTimerMenu] = useState(false)
   const [count, setCount] = useState<number | null>(null)
+  const [currentShotIndex, setCurrentShotIndex] = useState<number>(0)
   const [shots, setShots] = useState<HTMLCanvasElement[]>([])
   const [shooting, setShooting] = useState(false)
   const [flash, setFlash] = useState(false)
 
-  const metricsRef = useRef<FaceMetrics>(metrics)
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  // Keep propRef always synced to active prop selection
   useEffect(() => {
-    metricsRef.current = metrics
-  }, [metrics])
+    propRef.current = prop
+  }, [prop])
 
   useEffect(() => {
     start()
@@ -129,16 +188,48 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
       setPropsList(loaded)
       if (loaded.length > 0 && !loaded.some((p) => p.id === prop.id)) {
         setProp(loaded[0])
+        propRef.current = loaded[0]
       }
     })
   }, [start])
+
+  // 60FPS Direct Hardware Overlay Render Loop (0 React re-renders)
+  useEffect(() => {
+    let animId: number
+    const renderLoop = () => {
+      const canvas = overlayCanvasRef.current
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+          if (propRef.current && propRef.current.src) {
+            drawPropOnCanvas(
+              ctx,
+              canvas.width,
+              canvas.height,
+              propRef.current,
+              metricsRef.current,
+              true
+            )
+          }
+        }
+      }
+      animId = requestAnimationFrame(renderLoop)
+    }
+
+    animId = requestAnimationFrame(renderLoop)
+    return () => cancelAnimationFrame(animId)
+  }, [metricsRef])
 
   const runSequence = useCallback(async () => {
     if (shooting || !videoRef.current) return
     setShooting(true)
     setShots([])
     const grabbed: HTMLCanvasElement[] = []
+
     for (let i = 0; i < total; i++) {
+      setCurrentShotIndex(i)
+
       for (let s = seconds; s > 0; s--) {
         setCount(s)
         await new Promise((r) => setTimeout(r, 1000))
@@ -148,12 +239,19 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
       playShutterSound()
       setTimeout(() => setFlash(false), 450)
 
-      grabbed.push(snapshot(videoRef.current, prop, metricsRef.current))
+      // Use propRef.current at the exact moment of each snapshot to capture latest chosen prop!
+      const activeProp = propRef.current
+      const activeMetrics = metricsRef.current
+      grabbed.push(snapshot(videoRef.current, activeProp, activeMetrics))
       setShots([...grabbed])
-      await new Promise((r) => setTimeout(r, 700))
+
+      if (i < total - 1) {
+        // Brief comfortable inter-shot transition so user can switch props or pose
+        await new Promise((r) => setTimeout(r, 900))
+      }
     }
     setShooting(false)
-  }, [shooting, videoRef, total, seconds, prop])
+  }, [shooting, videoRef, total, seconds, metricsRef])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -168,105 +266,96 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
 
   const done = shots.length >= total
 
-  // Wearable prop overlay positioning on live video
-  let propStyle: React.CSSProperties = { top: '4%', left: '50%', width: '50%', transform: 'translateX(-50%)' }
-  if (prop.src && metrics.hasFace) {
-    const anchor = prop.anchor || 'forehead'
-    if (anchor === 'ear') {
-      const leftPct = (1 - metrics.earRight.x + 0.04) * 100
-      const topPct = (metrics.earRight.y + (prop.offsetY || -0.02)) * 100
-      const scale = metrics.scale * (prop.scaleFactor || 1.3)
-
-      propStyle = {
-        position: 'absolute',
-        left: `${leftPct}%`,
-        top: `${topPct}%`,
-        width: `${28 * scale}%`,
-        transform: `translate(-50%, -50%) rotate(${metrics.rotation}deg)`,
-        transition: 'transform 0.05s linear, left 0.05s linear, top 0.05s linear',
-      }
-    } else {
-      let pt = metrics.forehead
-      if (anchor === 'eyes') pt = metrics.eyeCenter
-      else if (anchor === 'nose') pt = metrics.nose
-
-      const leftPct = (1 - pt.x) * 100
-      const topPct = (pt.y + (prop.offsetY || -0.15)) * 100
-      const scale = metrics.scale * (prop.scaleFactor || 1.3)
-
-      propStyle = {
-        position: 'absolute',
-        left: `${leftPct}%`,
-        top: `${topPct}%`,
-        width: `${38 * scale}%`,
-        transform: `translate(-50%, -50%) rotate(${metrics.rotation}deg)`,
-        transition: 'transform 0.05s linear, left 0.05s linear, top 0.05s linear',
-      }
-    }
+  const handleSelectProp = (p: PropDef) => {
+    setProp(p)
+    propRef.current = p
   }
 
   return (
     <div className="w-full flex flex-col items-center gap-4 py-2 select-none">
-      {/* Row 1: Large Touch-Friendly Wearable Props Buttons */}
-      <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
-        {propsList.map((p) => (
-          <button
-            key={p.id}
-            onClick={() => setProp(p)}
-            title={p.label}
-            className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl grid place-items-center bg-white shadow-md transition-all cursor-pointer ${prop.id === p.id
-              ? 'ring-3 ring-[#8198ed] border-2 border-[#5b7fcb] bg-[#eef2ff] scale-110 shadow-lg'
-              : 'border border-slate-200 hover:border-[#8198ed] hover:scale-105'
-              }`}
-          >
-            {p.src ? (
-              <img src={p.src} alt={p.label} className="size-10 sm:size-11 object-contain pointer-events-none" />
-            ) : (
-              <Ban className="w-6 h-6 text-rose-400" />
-            )}
-          </button>
-        ))}
+      {/* Row 1: Interactive Wearable Props Buttons (Changeable anytime before/during sequence) */}
+      <div className="flex flex-col items-center gap-1.5">
+        <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
+          {propsList.map((p) => {
+            const isSelected = prop.id === p.id
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => handleSelectProp(p)}
+                title={p.label}
+                className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl grid place-items-center bg-white shadow-md transition-all cursor-pointer ${
+                  isSelected
+                    ? 'ring-3 ring-[#8198ed] border-2 border-[#5b7fcb] bg-[#eef2ff] scale-110 shadow-lg'
+                    : 'border border-slate-200 hover:border-[#8198ed] hover:scale-105 active:scale-95'
+                }`}
+              >
+                {p.src ? (
+                  <img
+                    src={p.src}
+                    alt={p.label}
+                    className="size-10 sm:size-11 object-contain pointer-events-none"
+                  />
+                ) : (
+                  <Ban className="w-6 h-6 text-rose-400" />
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {shooting && (
+          <p className="font-pixel text-[9px] text-[#5b7fcb] animate-pulse">
+            ✨ Click any wearable above to change prop for the next shot!
+          </p>
+        )}
       </div>
 
-      {/* Main Row: Large Live Camera Stage + Clear Right-Side Strip Preview */}
+      {/* Main Row: Live Camera Stage + Right-Side Strip Preview */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-5 sm:gap-8 items-center justify-center w-full max-w-5xl">
-        {/* Large Video Box */}
+        {/* Large Video Box with Direct 60FPS AR Overlay */}
         <div className="relative bg-black rounded-2xl overflow-hidden aspect-[4/3] w-full max-w-3xl mx-auto shadow-2xl border-4 border-white/90">
           <video
             ref={videoRef}
             playsInline
             muted
-            className="w-full h-full object-cover -scale-x-100"
+            className="w-full h-full object-cover -scale-x-100 block"
+          />
+
+          {/* Real-Time 60FPS AR Wearable Canvas Overlay (zero-lag direct GPU rendering) */}
+          <canvas
+            ref={overlayCanvasRef}
+            width={CAP_W}
+            height={CAP_H}
+            className="absolute inset-0 w-full h-full pointer-events-none z-10"
           />
 
           {/* Flash & Countdowns */}
-          {flash && <div className="absolute inset-0 bg-white z-40 animate-out fade-out duration-300" />}
-
-          {/* Tracked Wearable Prop */}
-          {prop.src && (
-            <img
-              src={prop.src}
-              alt=""
-              className="pointer-events-none select-none"
-              style={propStyle}
-            />
+          {flash && (
+            <div className="absolute inset-0 bg-white z-40 animate-out fade-out duration-300 pointer-events-none" />
           )}
 
           {/* Countdown Display */}
           {count !== null && (
-            <div className="absolute inset-0 grid place-items-center pointer-events-none">
-              <span className="font-pixel text-white text-6xl sm:text-7xl md:text-8xl drop-shadow-[0_6px_0_rgba(91,111,188,0.95)]">
-                {count}
-              </span>
+            <div className="absolute inset-0 grid place-items-center pointer-events-none z-30">
+              <div className="flex flex-col items-center gap-2">
+                <span className="font-pixel text-white text-6xl sm:text-7xl md:text-8xl drop-shadow-[0_6px_0_rgba(91,111,188,0.95)] animate-in zoom-in-75 duration-200">
+                  {count}
+                </span>
+                <span className="font-pixel text-xs sm:text-sm text-white bg-black/60 px-3 py-1 rounded-full backdrop-blur-xs border border-white/40">
+                  Shot #{currentShotIndex + 1} of {total}
+                </span>
+              </div>
             </div>
           )}
 
           {/* Camera Status Overlay */}
           {status !== 'live' && (
-            <div className="absolute inset-0 grid place-items-center text-center p-4 bg-black/85">
+            <div className="absolute inset-0 grid place-items-center text-center p-4 bg-black/85 z-30">
               <div className="font-pixel text-sm sm:text-base text-white/90 leading-relaxed">
                 {status === 'starting' && 'Connecting camera…'}
-                {status === 'denied' && 'Camera access blocked. Please allow camera permissions.'}
+                {status === 'denied' &&
+                  'Camera access blocked. Please allow camera permissions.'}
                 {status === 'error' && 'No camera found. Please check connection.'}
                 {status === 'idle' && 'Starting camera…'}
               </div>
@@ -292,10 +381,11 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
                       setSeconds(s)
                       setShowTimerMenu(false)
                     }}
-                    className={`font-pixel text-[9px] px-3 py-1.5 text-left rounded-lg transition-colors cursor-pointer ${seconds === s
-                      ? 'bg-[#8198ed] text-white font-bold'
-                      : 'text-slate-600 hover:bg-[#eef2ff]'
-                      }`}
+                    className={`font-pixel text-[9px] px-3 py-1.5 text-left rounded-lg transition-colors cursor-pointer ${
+                      seconds === s
+                        ? 'bg-[#8198ed] text-white font-bold'
+                        : 'text-slate-600 hover:bg-[#eef2ff]'
+                    }`}
                   >
                     {s}s Timer
                   </button>
@@ -336,37 +426,56 @@ export default function CameraStage({ template, onConfirm, onBack }: Props) {
           <div
             className="polaroid-texture p-3.5 sm:p-4 pt-3.5 pb-6 sm:pb-8 shadow-2xl flex flex-col items-center transition-all border border-white/60"
             style={{
-              width: template.cols === 2 ? 'clamp(280px, 28vw, 360px)' : 'clamp(200px, 20vw, 260px)',
+              width:
+                template.cols === 2
+                  ? 'clamp(280px, 28vw, 360px)'
+                  : 'clamp(200px, 20vw, 260px)',
             }}
           >
-            {/* Photo Slots Grid with straight edges */}
+            {/* Photo Slots Grid */}
             <div
               className="grid gap-2 sm:gap-2.5 w-full"
               style={{ gridTemplateColumns: `repeat(${template.cols}, 1fr)` }}
             >
-              {Array.from({ length: total }).map((_, n) => (
-                <div
-                  key={n}
-                  className="relative bg-[#101420] aspect-[4/3] overflow-hidden grid place-items-center w-full"
-                >
-                  {shots[n] ? (
-                    <img
-                      src={shots[n].toDataURL()}
-                      alt=""
-                      className="w-full h-full object-cover block"
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center gap-1">
-                      <span className="font-pixel text-sm sm:text-base text-white/40 font-bold">
-                        #{n + 1}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ))}
+              {Array.from({ length: total }).map((_, n) => {
+                const isCurrent = shooting && currentShotIndex === n
+                return (
+                  <div
+                    key={n}
+                    className={`relative bg-[#101420] aspect-[4/3] overflow-hidden grid place-items-center w-full transition-all ${
+                      isCurrent
+                        ? 'ring-2 ring-[#8198ed] scale-[1.02] shadow-lg'
+                        : ''
+                    }`}
+                  >
+                    {shots[n] ? (
+                      <img
+                        src={shots[n].toDataURL()}
+                        alt=""
+                        className="w-full h-full object-cover block"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center gap-1">
+                        <span
+                          className={`font-pixel text-sm sm:text-base font-bold ${
+                            isCurrent
+                              ? 'text-[#8198ed] animate-pulse'
+                              : 'text-white/40'
+                          }`}
+                        >
+                          #{n + 1}
+                        </span>
+                        {isCurrent && (
+                          <Sparkles className="w-3 h-3 text-[#8198ed] animate-spin" />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
 
-            {/* Polaroid Bottom White Chin with Blue Logo */}
+            {/* Polaroid Bottom White Chin */}
             <p className="font-pixel text-[11px] sm:text-xs text-[#5b7fcb] text-center mt-3 sm:mt-4 tracking-wider select-none">
               IT GUILD
             </p>

@@ -20,11 +20,21 @@ export type CustomProp = {
   id: string
   label: string
   src: string
-  anchor: 'forehead' | 'eyes' | 'nose' | 'ear'
+  anchor: 'forehead' | 'eyes' | 'nose' | 'ear' | 'ear-left'
+  offsetX?: number
   offsetY: number
   scaleFactor: number
   isCustom: true
 }
+
+export type PropConfig = {
+  anchor?: 'forehead' | 'eyes' | 'nose' | 'ear' | 'ear-left'
+  offsetX?: number
+  offsetY?: number
+  scaleFactor?: number
+}
+
+export type PropConfigsMap = Record<string, PropConfig>
 
 export type CustomSticker = {
   id: string
@@ -298,6 +308,53 @@ export async function deleteCustomProp(id: string): Promise<void> {
     const tx = db.transaction('custom_props', 'readwrite')
     const store = tx.objectStore('custom_props')
     const req = store.delete(id)
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(req.error)
+  })
+}
+
+export async function getPropConfigs(): Promise<PropConfigsMap> {
+  try {
+    const db = await openDB()
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('settings', 'readonly')
+        const store = tx.objectStore('settings')
+        const req = store.get('prop_configs')
+        req.onsuccess = () => {
+          resolve((req.result && req.result.data) || {})
+        }
+        req.onerror = () => resolve({})
+      } catch {
+        resolve({})
+      }
+    })
+  } catch {
+    return {}
+  }
+}
+
+export async function savePropConfig(propId: string, config: PropConfig): Promise<void> {
+  const all = await getPropConfigs()
+  all[propId] = { ...(all[propId] || {}), ...config }
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('settings', 'readwrite')
+    const store = tx.objectStore('settings')
+    const req = store.put({ key: 'prop_configs', data: all })
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(req.error)
+  })
+}
+
+export async function resetPropConfig(propId: string): Promise<void> {
+  const all = await getPropConfigs()
+  delete all[propId]
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('settings', 'readwrite')
+    const store = tx.objectStore('settings')
+    const req = store.put({ key: 'prop_configs', data: all })
     req.onsuccess = () => resolve()
     req.onerror = () => reject(req.error)
   })

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision'
 import {
   computeFaceMetrics,
-  lerpFaceMetrics,
+  FaceMetricsFilter,
   DEFAULT_FACE_METRICS,
   type FaceMetrics,
 } from '../lib/faceTracking'
@@ -37,8 +37,14 @@ export function useFaceLandmarker(
   const [isReady, setIsReady] = useState(false)
   const landmarkerRef = useRef<FaceLandmarker | null>(null)
   const animRef = useRef<number | null>(null)
+  const vfcHandleRef = useRef<number | null>(null)
   const lastTimeRef = useRef<number>(-1)
   const currentMetricsRef = useRef<FaceMetrics>(DEFAULT_FACE_METRICS)
+  const filterRef = useRef<FaceMetricsFilter>(new FaceMetricsFilter())
+  const lastStateNotifyRef = useRef<{ hasFace: boolean; expression: string }>({
+    hasFace: false,
+    expression: 'neutral',
+  })
 
   useEffect(() => {
     let mounted = true
@@ -57,18 +63,21 @@ export function useFaceLandmarker(
     }
   }, [])
 
-  const detectFrame = useCallback(() => {
-    const video = videoRef.current
-    const landmarker = landmarkerRef.current
+  const processDetection = useCallback(
+    (now: number) => {
+      const video = videoRef.current
+      const landmarker = landmarkerRef.current
 
-    if (
-      enabled &&
-      video &&
-      video.readyState >= 2 &&
-      !video.paused &&
-      !video.ended
-    ) {
-      const now = performance.now()
+      if (
+        !enabled ||
+        !video ||
+        video.readyState < 2 ||
+        video.paused ||
+        video.ended
+      ) {
+        return
+      }
+
       if (now !== lastTimeRef.current) {
         lastTimeRef.current = now
         try {
@@ -76,33 +85,83 @@ export function useFaceLandmarker(
           if (landmarker) {
             const results = landmarker.detectForVideo(video, now)
             if (results.faceLandmarks && results.faceLandmarks.length > 0) {
-              target = computeFaceMetrics(results.faceLandmarks[0])
+              const vw = video.videoWidth || 1280
+              const vh = video.videoHeight || 720
+              target = computeFaceMetrics(results.faceLandmarks[0], vw, vh, 4 / 3)
             }
           }
-          const smoothed = lerpFaceMetrics(currentMetricsRef.current, target, 0.35)
+
+          let smoothed: FaceMetrics
+          if (target.hasFace) {
+            smoothed = filterRef.current.filter(target, now)
+          } else {
+            filterRef.current.reset()
+            smoothed = DEFAULT_FACE_METRICS
+          }
+
           currentMetricsRef.current = smoothed
-          setMetrics(smoothed)
+
+          // Check if high-level discrete state changed (e.g. face locked, smile badge)
+          // To prevent 60fps React re-renders from throttling performance, only update
+          // React state when discrete visual status changes or on periodic interval
+          const prev = lastStateNotifyRef.current
+          const stateChanged =
+            prev.hasFace !== smoothed.hasFace ||
+            prev.expression !== smoothed.expression
+
+          if (stateChanged) {
+            lastStateNotifyRef.current = {
+              hasFace: smoothed.hasFace,
+              expression: smoothed.expression,
+            }
+            setMetrics(smoothed)
+          }
         } catch {
           // ignore tracking frame errors
         }
       }
-    }
+    },
+    [videoRef, enabled]
+  )
 
-    if (enabled) {
-      animRef.current = requestAnimationFrame(detectFrame)
+  const loop = useCallback(() => {
+    if (!enabled) return
+
+    const video = videoRef.current
+    if (video && 'requestVideoFrameCallback' in video) {
+      vfcHandleRef.current = (video as any).requestVideoFrameCallback(
+        (now: number) => {
+          processDetection(now)
+          loop()
+        }
+      )
+    } else {
+      processDetection(performance.now())
+      animRef.current = requestAnimationFrame(loop)
     }
-  }, [videoRef, enabled])
+  }, [enabled, processDetection, videoRef])
 
   useEffect(() => {
     if (enabled) {
-      animRef.current = requestAnimationFrame(detectFrame)
+      loop()
     } else {
+      filterRef.current.reset()
+      currentMetricsRef.current = DEFAULT_FACE_METRICS
       setMetrics(DEFAULT_FACE_METRICS)
     }
+
     return () => {
       if (animRef.current) cancelAnimationFrame(animRef.current)
+      const video = videoRef.current
+      if (
+        video &&
+        'cancelVideoFrameCallback' in video &&
+        vfcHandleRef.current !== null
+      ) {
+        ;(video as any).cancelVideoFrameCallback(vfcHandleRef.current)
+      }
     }
-  }, [enabled, detectFrame])
+  }, [enabled, loop, videoRef])
 
-  return { metrics, isReady }
+  return { metrics, metricsRef: currentMetricsRef, isReady }
 }

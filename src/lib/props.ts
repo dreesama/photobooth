@@ -6,15 +6,16 @@ import dog from '../imports/OmoideCam-3/c1c874077148bd771d7a43c736e73bafb6ff1ac9
 import grad from '../imports/OmoideCam-3/f7ebaecfdb7305cfc6b5a08fe41b001b4135e139.png'
 import pirate from '../imports/OmoideCam-3/5d7d0f8bbc21d5588c115bf45540d327fd329bad.png'
 import flower from '../imports/OmoideCam-3/8f2026700a0251154012c4fb2605b53d65c540a4.png'
-import { getCustomProps, getHiddenAssets, type CustomProp } from './db'
+import { getCustomProps, getHiddenAssets, getPropConfigs, type CustomProp } from './db'
 
-export type PropAnchor = 'forehead' | 'eyes' | 'nose' | 'ear'
+export type PropAnchor = 'forehead' | 'eyes' | 'nose' | 'ear' | 'ear-left'
 
 export type PropDef = {
   id: string
   label: string
   src: string | null
   anchor?: PropAnchor
+  offsetX?: number // relative horizontal offset
   offsetY?: number // relative vertical offset
   scaleFactor?: number // size relative to face width
   isCustom?: boolean
@@ -23,13 +24,13 @@ export type PropDef = {
 
 export const BUILTIN_PROPS: PropDef[] = [
   { id: 'none', label: 'None', src: null },
-  { id: 'bunny', label: 'Bunny', src: bunny, anchor: 'forehead', offsetY: -0.22, scaleFactor: 1.5 },
-  { id: 'cat', label: 'Cat', src: cat, anchor: 'forehead', offsetY: -0.14, scaleFactor: 1.4 },
-  { id: 'cowboy', label: 'Cowboy', src: cowboy, anchor: 'forehead', offsetY: -0.18, scaleFactor: 1.6 },
-  { id: 'dog', label: 'Dog', src: dog, anchor: 'eyes', offsetY: -0.06, scaleFactor: 1.65 },
-  { id: 'grad', label: 'Grad', src: grad, anchor: 'forehead', offsetY: -0.16, scaleFactor: 1.4 },
-  { id: 'pirate', label: 'Pirate', src: pirate, anchor: 'forehead', offsetY: -0.16, scaleFactor: 1.5 },
-  { id: 'flower', label: 'Flower', src: flower, anchor: 'ear', offsetY: -0.02, scaleFactor: 0.85 },
+  { id: 'bunny', label: 'Bunny', src: bunny, anchor: 'forehead', offsetX: 0, offsetY: -0.22, scaleFactor: 1.5 },
+  { id: 'cat', label: 'Cat', src: cat, anchor: 'forehead', offsetX: 0, offsetY: -0.14, scaleFactor: 1.4 },
+  { id: 'cowboy', label: 'Cowboy', src: cowboy, anchor: 'forehead', offsetX: 0, offsetY: -0.18, scaleFactor: 1.6 },
+  { id: 'dog', label: 'Dog', src: dog, anchor: 'eyes', offsetX: 0, offsetY: -0.06, scaleFactor: 1.65 },
+  { id: 'grad', label: 'Grad', src: grad, anchor: 'forehead', offsetX: 0, offsetY: -0.16, scaleFactor: 1.4 },
+  { id: 'pirate', label: 'Pirate', src: pirate, anchor: 'forehead', offsetX: 0, offsetY: -0.16, scaleFactor: 1.5 },
+  { id: 'flower', label: 'Flower', src: flower, anchor: 'ear', offsetX: 0, offsetY: -0.02, scaleFactor: 0.85 },
 ]
 
 export let PROPS: PropDef[] = [...BUILTIN_PROPS]
@@ -39,16 +40,38 @@ const cache = new Map<string, HTMLImageElement>()
 
 export async function loadProps(includeHidden = false): Promise<PropDef[]> {
   try {
-    const [custom, hiddenAssets] = await Promise.all([
+    const [custom, hiddenAssets, propConfigs] = await Promise.all([
       getCustomProps(),
       getHiddenAssets(),
+      getPropConfigs(),
     ])
     const hiddenSet = new Set(hiddenAssets.props || [])
-    const all = [...BUILTIN_PROPS, ...custom].map((p) => ({
-      ...p,
-      isHidden: hiddenSet.has(p.id),
-    }))
 
+    const mergedBuiltin = BUILTIN_PROPS.map((p) => {
+      const cfg = propConfigs[p.id]
+      return {
+        ...p,
+        anchor: cfg?.anchor || p.anchor,
+        offsetX: cfg?.offsetX !== undefined ? cfg.offsetX : (p.offsetX ?? 0),
+        offsetY: cfg?.offsetY !== undefined ? cfg.offsetY : (p.offsetY ?? 0),
+        scaleFactor: cfg?.scaleFactor !== undefined ? cfg.scaleFactor : (p.scaleFactor ?? 1.3),
+        isHidden: hiddenSet.has(p.id),
+      }
+    })
+
+    const mergedCustom = custom.map((p) => {
+      const cfg = propConfigs[p.id]
+      return {
+        ...p,
+        anchor: cfg?.anchor || p.anchor,
+        offsetX: cfg?.offsetX !== undefined ? cfg.offsetX : (p.offsetX ?? 0),
+        offsetY: cfg?.offsetY !== undefined ? cfg.offsetY : (p.offsetY ?? 0),
+        scaleFactor: cfg?.scaleFactor !== undefined ? cfg.scaleFactor : (p.scaleFactor ?? 1.3),
+        isHidden: hiddenSet.has(p.id),
+      }
+    })
+
+    const all = [...mergedBuiltin, ...mergedCustom]
     PROPS = includeHidden ? all : all.filter((p) => p.id === 'none' || !p.isHidden)
   } catch {
     PROPS = [...BUILTIN_PROPS]
