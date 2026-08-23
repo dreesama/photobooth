@@ -8,7 +8,7 @@ import s6 from '../imports/OmoideCam-4/e4f5397eea5199258f19cbfb53cef050db0a4fb9.
 import s7 from '../imports/OmoideCam-4/821d2968f5a1882f034b03e8488d913c097b295a.png'
 import s8 from '../imports/OmoideCam-4/5a18eee46d47840055fc98ba07b68922782409b5.png'
 import s9 from '../imports/OmoideCam-4/bbbfec1a9a763836c989ead3116814d0d1f9c0f3.png'
-import { getCustomStickers, getHiddenAssets, type CustomSticker } from './db'
+import { getCustomStickers, getHiddenAssets, getStickerUsageMap, type CustomSticker } from './db'
 
 export type StickerDef = {
   id: string
@@ -20,15 +20,15 @@ export type StickerDef = {
 }
 
 export const BUILTIN_STICKERS: StickerDef[] = [
-  { id: 'st1', src: s1, label: 'Star' },
-  { id: 'st2', src: s2, label: 'Sushi' },
-  { id: 'st3', src: s3, label: 'Ribbon' },
-  { id: 'st4', src: s4, label: 'Heart' },
-  { id: 'st5', src: s5, label: 'Sparkle' },
-  { id: 'st6', src: s6, label: 'Drink' },
-  { id: 'st7', src: s7, label: 'Bunny' },
-  { id: 'st8', src: s8, label: 'Cat' },
-  { id: 'st9', src: s9, label: 'Cherry' },
+  { id: 'st1', src: s1, label: 'Star', category: 'Cute & Doodles' },
+  { id: 'st2', src: s2, label: 'Sushi', category: 'Cute & Doodles' },
+  { id: 'st3', src: s3, label: 'Ribbon', category: 'Cute & Doodles' },
+  { id: 'st4', src: s4, label: 'Heart', category: 'Cute & Doodles' },
+  { id: 'st5', src: s5, label: 'Sparkle', category: 'Cute & Doodles' },
+  { id: 'st6', src: s6, label: 'Drink', category: 'Cute & Doodles' },
+  { id: 'st7', src: s7, label: 'Bunny', category: 'Anime & Chibi' },
+  { id: 'st8', src: s8, label: 'Cat', category: 'Anime & Chibi' },
+  { id: 'st9', src: s9, label: 'Cherry', category: 'Y2K Retro' },
 ]
 
 export let STICKERS: StickerDef[] = [...BUILTIN_STICKERS]
@@ -54,6 +54,7 @@ export async function loadStickers(includeHidden = false): Promise<StickerDef[]>
     const hiddenSet = new Set(hiddenAssets.stickers || [])
     const all = [...BUILTIN_STICKERS, ...custom].map((s) => ({
       ...s,
+      category: s.category || 'Cute & Doodles',
       isHidden: hiddenSet.has(s.id),
     }))
 
@@ -80,4 +81,23 @@ export function stickerImage(src: string): HTMLImageElement | null {
     cache.set(src, im)
   }
   return im
+}
+
+/**
+ * Returns Top 10 most used / recently used stickers.
+ */
+export function getRecentOrPopularStickers(all: StickerDef[], limit = 10): StickerDef[] {
+  const usageMap = getStickerUsageMap()
+  const sorted = [...all].sort((a, b) => {
+    const statA = usageMap[a.id] || { count: 0, lastUsed: 0 }
+    const statB = usageMap[b.id] || { count: 0, lastUsed: 0 }
+    if (statB.count !== statA.count) {
+      return statB.count - statA.count
+    }
+    if (statB.lastUsed !== statA.lastUsed) {
+      return statB.lastUsed - statA.lastUsed
+    }
+    return 0
+  })
+  return sorted.slice(0, limit)
 }

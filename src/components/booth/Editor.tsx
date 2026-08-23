@@ -31,9 +31,23 @@ import {
   type Template,
   type FontOption,
 } from '../../lib/strip'
-import { STICKERS, loadStickers, type PlacedSticker, type StickerDef } from '../../lib/stickers'
-import { saveToArchive, saveActiveSessionState, getActiveSessionState } from '../../lib/db'
+import {
+  STICKERS,
+  loadStickers,
+  getRecentOrPopularStickers,
+  type PlacedSticker,
+  type StickerDef,
+} from '../../lib/stickers'
+import {
+  saveToArchive,
+  saveActiveSessionState,
+  getActiveSessionState,
+  getStickerFolders,
+  recordStickerUsage,
+} from '../../lib/db'
 import { uploadPhotoStrip } from '../../lib/upload'
+import StickerFolderModal from './StickerFolderModal'
+import { Folder } from 'lucide-react'
 
 type Props = {
   frames: HTMLCanvasElement[]
@@ -72,6 +86,12 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
 
   const [bgsList, setBgsList] = useState<Background[]>(BACKGROUNDS)
   const [stickersList, setStickersList] = useState<StickerDef[]>(STICKERS)
+  const [showFolderModal, setShowFolderModal] = useState(false)
+  const [stickerFolders, setStickerFolders] = useState<string[]>([])
+
+  const quickStickers = useMemo(() => {
+    return getRecentOrPopularStickers(stickersList, 10)
+  }, [stickersList, stickers])
 
   const stageRef = useRef<HTMLDivElement | null>(null)
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -105,6 +125,10 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
 
     loadStickers(false).then((loadedStickers) => {
       setStickersList(loadedStickers)
+    })
+
+    getStickerFolders().then((f) => {
+      setStickerFolders(f)
     })
 
     // Restore customization states if session exists
@@ -667,34 +691,65 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
 
         {/* ---- 3. Stickers ---- */}
         <section>
-          <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
-            Stickers
-          </h3>
-          <div className="grid grid-cols-5 sm:grid-cols-6 gap-2.5 sm:gap-3 max-w-[620px]">
+          <div className="flex items-center justify-between mb-3 max-w-[620px]">
+            <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider select-none">
+              Stickers
+            </h3>
+            <span className="font-pixel text-[8px] sm:text-[9px] text-[#8792c4]">
+              Top 10 Recent / Popular
+            </span>
+          </div>
+
+          <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5 sm:gap-3 max-w-[620px]">
             {/* Clear All Stickers Button */}
             <button
+              type="button"
               onClick={() => setStickers([])}
-              className="size-16 sm:size-20 rounded-xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex items-center justify-center transition-all cursor-pointer hover:scale-105"
+              className="size-16 sm:size-20 rounded-xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex flex-col items-center justify-center transition-all cursor-pointer hover:scale-105 shadow-xs"
               title="Clear all stickers"
             >
-              <Trash2 className="w-5 h-5 text-rose-400" />
+              <Trash2 className="w-4 h-4 text-rose-400 mb-0.5" />
+              <span className="font-pixel text-[8px] text-rose-400">Clear</span>
             </button>
 
-            {/* Stickers List */}
-            {stickersList.map((s) => {
+            {/* Browse Packs / Folders Button */}
+            <button
+              type="button"
+              onClick={() => setShowFolderModal(true)}
+              className="relative size-16 sm:size-20 rounded-xl bg-gradient-to-tr from-[#5b6fbc] to-[#8198ed] text-white border-2 border-white/60 hover:border-white hover:scale-105 active:scale-95 flex flex-col items-center justify-center p-1.5 transition-all cursor-pointer shadow-md group"
+              title="Browse all sticker packs and folders (MLBB, Valorant, etc.)"
+            >
+              <Folder className="w-5 h-5 sm:w-6 sm:h-6 mb-0.5 text-white group-hover:scale-110 transition-transform" />
+              <span className="font-pixel text-[8px] sm:text-[9px] text-white leading-tight font-bold text-center">
+                + Packs
+              </span>
+              <span className="font-mono text-[7px] text-white/80 mt-0.5">
+                All ({stickersList.length})
+              </span>
+            </button>
+
+            {/* Top 10 Most / Recently Used Stickers */}
+            {quickStickers.map((s) => {
               const placedCount = stickers.filter((st) => st.src === s.src).length
               return (
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => addSticker(s.src)}
-                  className="relative size-16 sm:size-20 rounded-xl bg-[#e8eeff] hover:bg-white border-2 border-transparent hover:border-[#8198ed] hover:scale-105 active:scale-95 flex items-center justify-center p-2.5 transition-all cursor-pointer shadow-xs"
+                  onClick={() => {
+                    recordStickerUsage(s.id)
+                    addSticker(s.src)
+                  }}
+                  className="relative size-16 sm:size-20 rounded-xl bg-[#e8eeff] hover:bg-white border-2 border-transparent hover:border-[#8198ed] hover:scale-105 active:scale-95 flex flex-col items-center justify-center p-1.5 transition-all cursor-pointer shadow-xs group"
+                  title={`${s.label} (${s.category || 'General'})`}
                 >
                   <img
                     src={s.src}
                     alt={s.label}
-                    className="max-h-full max-w-full object-contain pointer-events-none"
+                    className="max-h-9 sm:max-h-11 max-w-full object-contain pointer-events-none group-hover:scale-105 transition-transform"
                   />
+                  <span className="font-pixel text-[7px] text-[#5b7fcb] truncate w-full mt-1 text-center">
+                    {s.label}
+                  </span>
                   {placedCount > 0 && (
                     <span className="absolute top-1 right-1 bg-[#8198ed] text-white text-[9px] font-bold rounded-full size-4 flex items-center justify-center shadow-xs">
                       {placedCount}
@@ -957,6 +1012,19 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
           </div>
         </div>
       )}
+
+      {/* Sticker Packs & Folders Explorer Modal */}
+      <StickerFolderModal
+        isOpen={showFolderModal}
+        onClose={() => setShowFolderModal(false)}
+        stickers={stickersList}
+        folders={stickerFolders}
+        placedStickers={stickers}
+        onSelectSticker={(src, id) => {
+          recordStickerUsage(id)
+          addSticker(src)
+        }}
+      />
     </div>
   )
 }

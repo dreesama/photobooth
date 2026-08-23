@@ -425,6 +425,96 @@ export async function deleteCustomSticker(id: string): Promise<void> {
   })
 }
 
+/* ================= STICKER FOLDERS & USAGE TRACKING ================= */
+
+export const DEFAULT_STICKER_FOLDERS = [
+  'Cute & Doodles',
+  'MLBB',
+  'Valorant',
+  'Anime & Chibi',
+  'Y2K Retro',
+  'Event & Badges',
+]
+
+export async function getStickerFolders(): Promise<string[]> {
+  try {
+    const db = await openDB()
+    const customFolders = await new Promise<string[]>((resolve) => {
+      try {
+        const tx = db.transaction('settings', 'readonly')
+        const store = tx.objectStore('settings')
+        const req = store.get('sticker_folders')
+        req.onsuccess = () => resolve((req.result && req.result.data) || [])
+        req.onerror = () => resolve([])
+      } catch {
+        resolve([])
+      }
+    })
+
+    const merged = Array.from(new Set([...DEFAULT_STICKER_FOLDERS, ...customFolders]))
+    return merged
+  } catch {
+    return DEFAULT_STICKER_FOLDERS
+  }
+}
+
+export async function saveStickerFolder(folderName: string): Promise<string[]> {
+  const trimmed = folderName.trim()
+  if (!trimmed) return await getStickerFolders()
+  const all = await getStickerFolders()
+  if (!all.includes(trimmed)) {
+    all.push(trimmed)
+    const db = await openDB()
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction('settings', 'readwrite')
+      const store = tx.objectStore('settings')
+      const req = store.put({ key: 'sticker_folders', data: all })
+      req.onsuccess = () => resolve()
+      req.onerror = () => resolve()
+    })
+  }
+  return all
+}
+
+export async function deleteStickerFolder(folderName: string): Promise<string[]> {
+  const all = await getStickerFolders()
+  const filtered = all.filter((f) => f !== folderName)
+  const db = await openDB()
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction('settings', 'readwrite')
+    const store = tx.objectStore('settings')
+    const req = store.put({ key: 'sticker_folders', data: filtered })
+    req.onsuccess = () => resolve()
+    req.onerror = () => resolve()
+  })
+  return filtered
+}
+
+export type StickerUsageRecord = { count: number; lastUsed: number }
+
+export function getStickerUsageMap(): Record<string, StickerUsageRecord> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem('itguild_sticker_usage')
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+export function recordStickerUsage(stickerId: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    const current = getStickerUsageMap()
+    const prev = current[stickerId] || { count: 0, lastUsed: 0 }
+    current[stickerId] = {
+      count: prev.count + 1,
+      lastUsed: Date.now(),
+    }
+    localStorage.setItem('itguild_sticker_usage', JSON.stringify(current))
+  } catch {}
+}
+
 /* ================= CUSTOM BACKGROUNDS OPERATIONS ================= */
 
 export async function getCustomBackgrounds(): Promise<CustomBackground[]> {
