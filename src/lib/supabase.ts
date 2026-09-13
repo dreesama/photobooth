@@ -153,7 +153,14 @@ export async function uploadToSupabase(
   }
 
   // 3. Construct the clean mobile viewer URL
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+  const settings = await getSettings().catch(() => null)
+  const configuredBase =
+    settings?.publicServerUrl?.trim() || (import.meta as any).env?.VITE_PUBLIC_APP_URL || ''
+  const baseUrl = configuredBase
+    ? configuredBase.replace(/\/$/, '')
+    : typeof window !== 'undefined'
+      ? window.location.origin
+      : ''
   const viewerUrl = `${baseUrl}/?photo=${id}`
 
   return {
