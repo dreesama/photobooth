@@ -360,7 +360,12 @@ function figmaMakeKitPlugin(options: { storiesGlob: string | string[] }): Plugin
 }
 
 function cloudUploadPlugin(): Plugin {
-  const photoCache = new Map<string, Buffer>()
+  type CachedPhoto = {
+    strip: Buffer
+    frames: Buffer[]
+  }
+  const photoCache = new Map<string, CachedPhoto | Buffer>()
+  const jsonMemCache = new Map<string, any>()
   const dataDir = path.resolve(__dirname, './.data')
 
   if (!fs.existsSync(dataDir)) {
@@ -370,16 +375,23 @@ function cloudUploadPlugin(): Plugin {
   }
 
   function readJson(filename: string, defaultValue: any) {
+    if (jsonMemCache.has(filename)) {
+      return jsonMemCache.get(filename)
+    }
     try {
       const filePath = path.join(dataDir, filename)
       if (fs.existsSync(filePath)) {
-        return JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+        const val = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+        jsonMemCache.set(filename, val)
+        return val
       }
     } catch {}
+    jsonMemCache.set(filename, defaultValue)
     return defaultValue
   }
 
   function writeJson(filename: string, data: any) {
+    jsonMemCache.set(filename, data)
     try {
       const filePath = path.join(dataDir, filename)
       fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8')
@@ -458,6 +470,7 @@ function cloudUploadPlugin(): Plugin {
       const settings = readJson('settings.json', null)
 
       res.setHeader('Content-Type', 'application/json')
+      res.setHeader('Cache-Control', 'public, max-age=5, stale-while-revalidate=30')
       res.end(JSON.stringify({ archive, props, stickers, backgrounds, hidden, settings }))
     })
 
@@ -488,7 +501,7 @@ function cloudUploadPlugin(): Plugin {
           const stickers = readJson('stickers.json', [])
           const idx = stickers.findIndex((s: any) => s.id === sticker.id)
           if (idx >= 0) stickers[idx] = sticker
-          else stickers.push(sticker)
+          else stickers.unshift(sticker)
           writeJson('stickers.json', stickers)
         }
         res.setHeader('Content-Type', 'application/json')
@@ -526,7 +539,7 @@ function cloudUploadPlugin(): Plugin {
           const props = readJson('props.json', [])
           const idx = props.findIndex((p: any) => p.id === prop.id)
           if (idx >= 0) props[idx] = prop
-          else props.push(prop)
+          else props.unshift(prop)
           writeJson('props.json', props)
         }
         res.setHeader('Content-Type', 'application/json')
@@ -564,7 +577,7 @@ function cloudUploadPlugin(): Plugin {
           const backgrounds = readJson('backgrounds.json', [])
           const idx = backgrounds.findIndex((b: any) => b.id === bg.id)
           if (idx >= 0) backgrounds[idx] = bg
-          else backgrounds.push(bg)
+          else backgrounds.unshift(bg)
           writeJson('backgrounds.json', backgrounds)
         }
         res.setHeader('Content-Type', 'application/json')
@@ -575,7 +588,7 @@ function cloudUploadPlugin(): Plugin {
       next()
     })
 
-    // 5. Photo Archive Sync (GET, POST, DELETE, CLEAR, FAVORITE)
+    // 5. Photo Archive Sync (GET, POST, DELETE, FAVORITE)
     middlewares.use('/api/sync/archive', async (req: any, res: any, next: any) => {
       const url = req.url || ''
       if (url.includes('/clear') && req.method === 'POST') {
@@ -615,6 +628,7 @@ function cloudUploadPlugin(): Plugin {
       if (req.method === 'GET') {
         const archive = readJson('archive.json', [])
         res.setHeader('Content-Type', 'application/json')
+        res.setHeader('Cache-Control', 'public, max-age=5, stale-while-revalidate=30')
         res.end(JSON.stringify(archive))
         return
       }
@@ -676,12 +690,21 @@ function cloudUploadPlugin(): Plugin {
       if (req.method !== 'POST') return next()
 
       try {
-        const { dataUrl } = await parseJsonBody(req)
-        const base64Data = dataUrl.split(',')[1] || dataUrl
-        const buffer = Buffer.from(base64Data, 'base64')
+        const { dataUrl, rawFrames } = await parseJsonBody(req)
+        const base64Data = dataUrl ? (dataUrl.split(',')[1] || dataUrl) : ''
+        const stripBuffer = base64Data ? Buffer.from(base64Data, 'base64') : Buffer.alloc(0)
+        const framesBuffers: Buffer[] = []
+        if (Array.isArray(rawFrames)) {
+          for (const rf of rawFrames) {
+            if (typeof rf === 'string' && rf.length > 0) {
+              const fb = rf.split(',')[1] || rf
+              framesBuffers.push(Buffer.from(fb, 'base64'))
+            }
+          }
+        }
         const id = `photo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
 
-        photoCache.set(id, buffer)
+        photoCache.set(id, { strip: stripBuffer, frames: framesBuffers })
 
         const baseUrl = getBaseUrl(req)
         const mobileUrl = `${baseUrl}/photo/${id}`
@@ -697,37 +720,70 @@ function cloudUploadPlugin(): Plugin {
 
     // 8. Direct Raw Image Stream
     middlewares.use('/api/raw/', (req: any, res: any, next: any) => {
-      const id = req.url?.replace('/', '').split('?')[0] || ''
-      const buffer = photoCache.get(id)
-      if (buffer) {
-        res.setHeader('Content-Type', 'image/png')
-        res.setHeader('Cache-Control', 'public, max-age=86400')
-        res.end(buffer)
-      } else {
+      const rawUrl = req.url || ''
+      const [pathPart, queryPart] = rawUrl.replace('/', '').split('?')
+      const id = pathPart || ''
+      const params = new URLSearchParams(queryPart || '')
+      const frameIdx = params.get('frame')
+
+      const cached = photoCache.get(id)
+      if (!cached) {
         res.statusCode = 404
         res.end('Photo not found')
+        return
       }
+
+      let buffer: Buffer
+      if (Buffer.isBuffer(cached)) {
+        buffer = cached
+      } else if (frameIdx !== null && cached.frames && cached.frames[parseInt(frameIdx, 10)]) {
+        buffer = cached.frames[parseInt(frameIdx, 10)]
+      } else {
+        buffer = cached.strip
+      }
+
+      res.setHeader('Content-Type', 'image/png')
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600')
+      res.end(buffer)
     })
 
     // 9. Direct Image Download Attachment
     middlewares.use('/api/download/', (req: any, res: any, next: any) => {
-      const id = req.url?.replace('/', '').split('?')[0] || ''
-      const buffer = photoCache.get(id)
-      if (buffer) {
-        res.setHeader('Content-Type', 'image/png')
-        res.setHeader('Content-Disposition', `attachment; filename="itguild-${id}.png"`)
-        res.end(buffer)
-      } else {
+      const rawUrl = req.url || ''
+      const [pathPart, queryPart] = rawUrl.replace('/', '').split('?')
+      const id = pathPart || ''
+      const params = new URLSearchParams(queryPart || '')
+      const frameIdx = params.get('frame')
+
+      const cached = photoCache.get(id)
+      if (!cached) {
         res.statusCode = 404
         res.end('Photo not found')
+        return
       }
+
+      let buffer: Buffer
+      let filename = `itguild-${id}-strip.png`
+
+      if (Buffer.isBuffer(cached)) {
+        buffer = cached
+      } else if (frameIdx !== null && cached.frames && cached.frames[parseInt(frameIdx, 10)]) {
+        buffer = cached.frames[parseInt(frameIdx, 10)]
+        filename = `itguild-${id}-photo-${parseInt(frameIdx, 10) + 1}.jpg`
+      } else {
+        buffer = cached.strip
+      }
+
+      res.setHeader('Content-Type', 'image/png')
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+      res.end(buffer)
     })
 
-    // 10. Mobile Web Photo Viewer Page
+    // 10. Mobile Web Photo Viewer Page (Framed Strip + Individual Photos)
     middlewares.use('/photo/', (req: any, res: any, next: any) => {
       const id = req.url?.replace('/', '').split('?')[0] || ''
-      const buffer = photoCache.get(id)
-      if (!buffer) {
+      const cached = photoCache.get(id)
+      if (!cached) {
         res.statusCode = 404
         res.setHeader('Content-Type', 'text/html')
         res.end(`<!DOCTYPE html>
@@ -751,15 +807,48 @@ function cloudUploadPlugin(): Plugin {
         return
       }
 
+      const framesCount = !Buffer.isBuffer(cached) && Array.isArray(cached.frames) ? cached.frames.length : 0
       const rawImgUrl = `/api/raw/${id}`
       const downloadUrl = `/api/download/${id}`
+
+      // Generate HTML for individual photos if available
+      let individualHtml = ''
+      if (framesCount > 0) {
+        let cards = ''
+        for (let i = 0; i < framesCount; i++) {
+          const frameImgUrl = `/api/raw/${id}?frame=${i}`
+          const frameDownUrl = `/api/download/${id}?frame=${i}`
+          cards += `
+            <div class="frame-card">
+              <img src="${frameImgUrl}" alt="Photo ${i + 1}" class="frame-thumb" loading="lazy" />
+              <div class="frame-actions">
+                <span class="frame-label">Photo #${i + 1}</span>
+                <a href="${frameDownUrl}" download="itguild-${id}-photo-${i + 1}.jpg" class="btn-sub">
+                  <span>💾</span>
+                  <span>Save</span>
+                </a>
+              </div>
+            </div>
+          `
+        }
+
+        individualHtml = `
+          <div class="section-title">
+            <span>📸</span>
+            <span>Individual Photos (${framesCount})</span>
+          </div>
+          <div class="frames-grid">
+            ${cards}
+          </div>
+        `
+      }
 
       const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>IT GUILD - Your Photo</title>
+  <title>IT GUILD - Your Photos</title>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Nunito:wght@700;800&display=swap" rel="stylesheet" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -770,36 +859,54 @@ function cloudUploadPlugin(): Plugin {
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 20px;
+      justify-content: flex-start;
+      padding: 24px 16px 40px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      color: #3b5998;
+    }
+    .header h1 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 16px;
+      color: #334e8e;
+      text-shadow: 0 2px 0 #fff;
+      margin-bottom: 6px;
+    }
+    .header p {
+      font-size: 13px;
+      color: #5b7fcb;
+      font-weight: 800;
     }
     .card {
       background: white;
-      padding: 12px;
-      border-radius: 12px;
+      padding: 14px;
+      border-radius: 16px;
       box-shadow: 0 12px 36px rgba(91, 111, 188, 0.35);
-      max-width: 380px;
+      max-width: 420px;
       width: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
       animation: fadeIn 0.4s ease-out;
+      margin-bottom: 24px;
     }
     .photo-img {
       width: 100%;
       height: auto;
-      border-radius: 4px;
+      border-radius: 8px;
       display: block;
       box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     }
     .btn {
-      margin-top: 16px;
+      margin-top: 14px;
       background: #8198ed;
       color: white;
       text-decoration: none;
       font-family: 'Press Start 2P', monospace;
-      font-size: 11px;
-      padding: 14px 20px;
+      font-size: 10px;
+      padding: 14px 18px;
       border-radius: 12px;
       box-shadow: 0 4px 0 #5b6fbc;
       text-align: center;
@@ -815,24 +922,93 @@ function cloudUploadPlugin(): Plugin {
       box-shadow: 0 2px 0 #5b6fbc;
     }
     .hint {
-      margin-top: 12px;
-      font-size: 12px;
-      color: #5b6fbc;
+      margin-top: 10px;
+      font-size: 11px;
+      color: #5b7fcb;
       font-weight: bold;
       text-align: center;
+    }
+    .section-title {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 11px;
+      color: #2b3d68;
+      margin: 10px 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      max-width: 420px;
+    }
+    .frames-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      width: 100%;
+      max-width: 420px;
+    }
+    .frame-card {
+      background: white;
+      padding: 8px;
+      border-radius: 12px;
+      box-shadow: 0 6px 16px rgba(91, 111, 188, 0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .frame-thumb {
+      width: 100%;
+      aspect-ratio: 4/3;
+      object-fit: cover;
+      border-radius: 6px;
+      background: #eee;
+    }
+    .frame-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+    .frame-label {
+      font-size: 11px;
+      font-weight: 800;
+      color: #5b7fcb;
+    }
+    .btn-sub {
+      background: #52b788;
+      color: white;
+      text-decoration: none;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 8px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      box-shadow: 0 2px 0 #2d6a4f;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-sub:active {
+      transform: translateY(1px);
+      box-shadow: 0 1px 0 #2d6a4f;
     }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
   </style>
 </head>
 <body>
+  <div class="header">
+    <h1>IT GUILD PHOTOBOOTH</h1>
+    <p>Softcopy High-Res Download</p>
+  </div>
+
   <div class="card">
     <img src="${rawImgUrl}" alt="Your Photobooth Strip" class="photo-img" />
-    <a href="${downloadUrl}" download="itguild-photo.png" class="btn">
+    <a href="${downloadUrl}" download="itguild-${id}-strip.png" class="btn">
       <span>💾</span>
-      <span>Save to Phone</span>
+      <span>Save Framed Strip</span>
     </a>
     <p class="hint">Long-press image to save to Camera Roll!</p>
   </div>
+
+  ${individualHtml}
 </body>
 </html>`
 

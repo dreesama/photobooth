@@ -205,6 +205,21 @@ export type ComposeOpts = {
   fontSizeScale?: number
   isBold?: boolean
   isItalic?: boolean
+  qrDataUrl?: string | null
+  showQrOnFrame?: boolean
+}
+
+const QR_IMG_CACHE = new Map<string, HTMLImageElement>()
+
+export function getQrImage(url?: string): HTMLImageElement | null {
+  if (!url) return null
+  let img = QR_IMG_CACHE.get(url)
+  if (!img) {
+    img = new Image()
+    img.src = url
+    QR_IMG_CACHE.set(url, img)
+  }
+  return img
 }
 
 // 300 DPI Ultra Sharp Super-Sampled Dimensions
@@ -222,7 +237,7 @@ export function stripSize(t: Template) {
 }
 
 export function renderStripToCanvas(canvas: HTMLCanvasElement, opts: ComposeOpts): void {
-  const { frames, template, filter, background, frameColor, stickers, logo, customText, textColor, fontStyle, fontSizeScale, isBold, isItalic } = opts
+  const { frames, template, filter, background, frameColor, stickers, logo, customText, textColor, fontStyle, fontSizeScale, isBold, isItalic, qrDataUrl, showQrOnFrame } = opts
   const { width, height } = stripSize(template)
 
   if (canvas.width !== width || canvas.height !== height) {
@@ -307,6 +322,33 @@ export function renderStripToCanvas(canvas: HTMLCanvasElement, opts: ComposeOpts
     ctx.fillText(text.trim(), width / 2, footY + FOOT / 2)
     ctx.restore()
   }
+
+  // ---- mini QR code on footer (Life4Cuts / Photoism style) ----
+  if (qrDataUrl && showQrOnFrame !== false) {
+    const qrImg = getQrImage(qrDataUrl)
+    if (qrImg && qrImg.complete && qrImg.naturalWidth) {
+      const qrSize = Math.round(FOOT * 0.72) // 138px on 300 DPI canvas (~13-14mm physical print)
+      const qrMargin = 28
+      const qrX = width - PAD_X - qrSize - qrMargin
+      const qrY = height - FOOT + (FOOT - qrSize) / 2
+      const padding = 8
+
+      ctx.save()
+      // Crisp flat white container with no drop shadow for clean, readable scanning
+      ctx.fillStyle = '#ffffff'
+
+      if (typeof (ctx as any).roundRect === 'function') {
+        ctx.beginPath()
+        ;(ctx as any).roundRect(qrX - padding, qrY - padding, qrSize + padding * 2, qrSize + padding * 2, 8)
+        ctx.fill()
+      } else {
+        ctx.fillRect(qrX - padding, qrY - padding, qrSize + padding * 2, qrSize + padding * 2)
+      }
+
+      ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize)
+      ctx.restore()
+    }
+  }
 }
 
 export function composeStrip(opts: ComposeOpts): HTMLCanvasElement {
@@ -320,7 +362,7 @@ export function composeStrip(opts: ComposeOpts): HTMLCanvasElement {
 }
 
 export async function composeStripAsync(opts: ComposeOpts): Promise<HTMLCanvasElement> {
-  const { background, stickers } = opts
+  const { background, stickers, qrDataUrl, showQrOnFrame } = opts
   const promises: Promise<any>[] = []
 
   if (background.kind === 'image' && background.url) {
@@ -331,6 +373,19 @@ export async function composeStripAsync(opts: ComposeOpts): Promise<HTMLCanvasEl
           const t = setTimeout(resolve, 200)
           bgImg.addEventListener('load', () => { clearTimeout(t); resolve(null) }, { once: true })
           bgImg.addEventListener('error', () => { clearTimeout(t); resolve(null) }, { once: true })
+        })
+      )
+    }
+  }
+
+  if (qrDataUrl && showQrOnFrame !== false) {
+    const qrImg = getQrImage(qrDataUrl)
+    if (qrImg && !qrImg.complete) {
+      promises.push(
+        new Promise((resolve) => {
+          const t = setTimeout(resolve, 200)
+          qrImg.addEventListener('load', () => { clearTimeout(t); resolve(null) }, { once: true })
+          qrImg.addEventListener('error', () => { clearTimeout(t); resolve(null) }, { once: true })
         })
       )
     }

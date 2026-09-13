@@ -5,8 +5,26 @@ import AdminDashboard from './components/admin/AdminDashboard'
 import AdminPasscodeModal, { isAdminAuthenticated } from './components/admin/AdminPasscodeModal'
 import ErrorBoundary from './components/ErrorBoundary'
 import PublicPortal from './components/PublicPortal'
+import MobilePhotoViewer from './components/MobilePhotoViewer'
 
 export default function App() {
+  const [photoId, setPhotoId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const p = params.get('photo') || params.get('p')
+      if (p) return p
+      const path = window.location.pathname
+      if (path.startsWith('/photo/')) {
+        return path.replace('/photo/', '').split('/')[0]
+      }
+      const hash = window.location.hash
+      if (hash.startsWith('#photo-') || hash.startsWith('#photo/')) {
+        return hash.replace(/^#photo[-/]/, '')
+      }
+    }
+    return null
+  })
+
   const [view, setViewState] = useState<'desktop' | 'booth' | 'admin' | 'public'>(() => {
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('itguild_current_view') as any
@@ -99,6 +117,23 @@ export default function App() {
   const handlePasscodeSuccess = () => {
     setShowPasscodeModal(false)
     setView(pendingAdminView)
+  }
+
+  // If user scanned QR code with photoId, render MobilePhotoViewer directly
+  if (photoId) {
+    return (
+      <ErrorBoundary>
+        <MobilePhotoViewer
+          photoId={photoId}
+          onBackToHome={() => {
+            setPhotoId(null)
+            if (typeof window !== 'undefined') {
+              window.history.replaceState(null, '', window.location.pathname)
+            }
+          }}
+        />
+      </ErrorBoundary>
+    )
   }
 
   return (

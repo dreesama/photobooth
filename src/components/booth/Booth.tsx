@@ -5,7 +5,7 @@ import LayoutPicker from './LayoutPicker'
 import CameraStage from './CameraStage'
 import Editor from './Editor'
 import FloatingDeco from '../FloatingDeco'
-import { TEMPLATES, type Template } from '../../lib/strip'
+import { TEMPLATES, countFor, type Template } from '../../lib/strip'
 import {
   getActiveSessionState,
   saveActiveSessionState,
@@ -67,10 +67,16 @@ export default function Booth({
     }
   }
 
+  const isSixPlus = template ? countFor(template) >= 6 : false
+
   return (
     <div
-      className={`relative min-h-screen flex items-center justify-center overflow-x-hidden ${
-        step === 'edit' ? 'p-0' : 'p-3 sm:p-6'
+      className={`relative w-full h-screen max-h-screen overflow-hidden flex ${
+        step === 'edit'
+          ? 'p-0 items-center justify-center'
+          : step === 'camera'
+          ? 'p-1 sm:p-2 items-center justify-center'
+          : 'p-3 sm:p-6 items-center justify-center'
       }`}
     >
       {/* Top right Admin shortcut */}
@@ -115,7 +121,7 @@ export default function Booth({
           />
         </div>
       ) : step === 'camera' && template ? (
-        <div className="relative z-10 w-full max-w-6xl mx-auto flex flex-col items-center justify-center p-2 sm:p-4">
+        <div className="relative z-10 w-full h-full max-h-screen overflow-hidden flex flex-col items-center justify-center">
           <CameraStage
             template={template}
             onBack={() => setStep('layout')}

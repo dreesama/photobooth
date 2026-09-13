@@ -60,6 +60,9 @@ export type EventSettings = {
   defaultTimer: number
   printLayout: 'single' | 'double_4x6' | 'grid'
   publicServerUrl?: string
+  supabaseUrl?: string
+  supabaseAnonKey?: string
+  supabaseBucket?: string
 }
 
 export const DEFAULT_SETTINGS: EventSettings = {
@@ -69,7 +72,11 @@ export const DEFAULT_SETTINGS: EventSettings = {
   autoSaveToArchive: true,
   defaultTimer: 3,
   printLayout: 'double_4x6',
-  publicServerUrl: 'https://esportcup.up.railway.app',
+  publicServerUrl: '',
+  supabaseUrl: 'https://vygozdxjuflsyadcataw.supabase.co',
+  supabaseAnonKey:
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ5Z296ZHhqdWZsc3lhZGNhdGF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyNTkwNTEsImV4cCI6MjEwNDgzNTA1MX0.rhbMEYlHXNIi6SxfZd476a8b6Zl1lYj4ijyg2FBxlA4',
+  supabaseBucket: 'photobooth',
 }
 
 const DB_NAME = 'omoide_booth_db'
@@ -123,6 +130,19 @@ async function syncFetch<T>(endpoint: string, options?: RequestInit): Promise<T 
   }
 }
 
+/* ================= IN-MEMORY ASSET CACHES & DEDUPLICATION ================= */
+let _archiveCache: ArchiveItem[] | null = null
+let _archiveFetchPromise: Promise<ArchiveItem[]> | null = null
+
+let _customPropsCache: CustomProp[] | null = null
+let _customPropsFetchPromise: Promise<CustomProp[]> | null = null
+
+let _customStickersCache: CustomSticker[] | null = null
+let _customStickersFetchPromise: Promise<CustomSticker[]> | null = null
+
+let _customBackgroundsCache: CustomBackground[] | null = null
+let _customBackgroundsFetchPromise: Promise<CustomBackground[]> | null = null
+
 /* ================= ARCHIVE OPERATIONS ================= */
 
 export async function saveToArchive(
@@ -135,6 +155,13 @@ export async function saveToArchive(
     timestamp: item.timestamp || Date.now(),
     favorite: item.favorite || false,
     printedCount: item.printedCount || 0,
+  }
+
+  // 0. Update In-Memory Cache immediately
+  if (_archiveCache) {
+    _archiveCache = [completeItem, ..._archiveCache.filter((a) => a.id !== completeItem.id)]
+  } else {
+    _archiveCache = [completeItem]
   }
 
   // 1. Sync to Cloud Server
@@ -153,34 +180,86 @@ export async function saveToArchive(
   })
 }
 
-export async function getArchive(): Promise<ArchiveItem[]> {
-  const db = await openDB()
-
-  // 1. Fetch latest from Server Cloud
-  const serverItems = await syncFetch<ArchiveItem[]>('/api/sync/archive')
-  if (serverItems && Array.isArray(serverItems) && serverItems.length > 0) {
-    try {
-      const tx = db.transaction('archive', 'readwrite')
-      const store = tx.objectStore('archive')
-      serverItems.forEach((it) => store.put(it))
-    } catch {}
-    return serverItems.sort((a, b) => b.timestamp - a.timestamp)
+export async function getArchive(forceRefresh = false): Promise<ArchiveItem[]> {
+  // 1. Instant 0ms response from In-Memory Cache
+  if (!forceRefresh && _archiveCache !== null) {
+    return [..._archiveCache]
   }
 
-  // 2. Fallback to Local IndexedDB
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('archive', 'readonly')
-    const store = tx.objectStore('archive')
-    const req = store.getAll()
-    req.onsuccess = () => {
-      const items = (req.result as ArchiveItem[]).sort((a, b) => b.timestamp - a.timestamp)
-      resolve(items)
+  const db = await openDB()
+
+  // 2. Read from Local IndexedDB first (near-instant <5ms)
+  const localItems = await new Promise<ArchiveItem[]>((resolve) => {
+    try {
+      const tx = db.transaction('archive', 'readonly')
+      const store = tx.objectStore('archive')
+      const req = store.getAll()
+      req.onsuccess = () => {
+        const items = (req.result as ArchiveItem[]).sort((a, b) => b.timestamp - a.timestamp)
+        resolve(items)
+      }
+      req.onerror = () => resolve([])
+    } catch {
+      resolve([])
     }
-    req.onerror = () => reject(req.error)
   })
+
+  if (localItems.length > 0 && !forceRefresh) {
+    _archiveCache = localItems
+
+    // Background sync from server without blocking UI
+    if (!_archiveFetchPromise) {
+      _archiveFetchPromise = syncFetch<ArchiveItem[]>('/api/sync/archive')
+        .then((serverItems) => {
+          if (serverItems && Array.isArray(serverItems) && serverItems.length > 0) {
+            _archiveCache = serverItems.sort((a, b) => b.timestamp - a.timestamp)
+            try {
+              const tx = db.transaction('archive', 'readwrite')
+              const store = tx.objectStore('archive')
+              serverItems.forEach((it) => store.put(it))
+            } catch {}
+          }
+          return _archiveCache || []
+        })
+        .finally(() => {
+          _archiveFetchPromise = null
+        })
+    }
+    return [..._archiveCache]
+  }
+
+  // 3. Fallback or Force Refresh: Cloud Fetch with Request Deduplication
+  if (!_archiveFetchPromise) {
+    _archiveFetchPromise = syncFetch<ArchiveItem[]>('/api/sync/archive')
+      .then((serverItems) => {
+        if (serverItems && Array.isArray(serverItems) && serverItems.length > 0) {
+          try {
+            const tx = db.transaction('archive', 'readwrite')
+            const store = tx.objectStore('archive')
+            serverItems.forEach((it) => store.put(it))
+          } catch {}
+          const sorted = serverItems.sort((a, b) => b.timestamp - a.timestamp)
+          _archiveCache = sorted
+          return sorted
+        }
+        _archiveCache = localItems
+        return localItems
+      })
+      .finally(() => {
+        _archiveFetchPromise = null
+      })
+  }
+
+  const items = await _archiveFetchPromise
+  return [...items]
 }
 
 export async function deleteArchiveItem(id: string): Promise<void> {
+  // Update in-memory cache immediately
+  if (_archiveCache) {
+    _archiveCache = _archiveCache.filter((a) => a.id !== id)
+  }
+
   syncFetch('/api/sync/archive/delete', {
     method: 'POST',
     body: JSON.stringify({ id }),
@@ -197,6 +276,17 @@ export async function deleteArchiveItem(id: string): Promise<void> {
 }
 
 export async function toggleArchiveFavorite(id: string): Promise<boolean> {
+  let nextFav = false
+  if (_archiveCache) {
+    _archiveCache = _archiveCache.map((a) => {
+      if (a.id === id) {
+        nextFav = !a.favorite
+        return { ...a, favorite: nextFav }
+      }
+      return a
+    })
+  }
+
   syncFetch('/api/sync/archive/favorite', {
     method: 'POST',
     body: JSON.stringify({ id }),
@@ -209,7 +299,7 @@ export async function toggleArchiveFavorite(id: string): Promise<boolean> {
     const getReq = store.get(id)
     getReq.onsuccess = () => {
       const item = getReq.result as ArchiveItem
-      if (!item) return resolve(false)
+      if (!item) return resolve(nextFav)
       item.favorite = !item.favorite
       store.put(item)
       resolve(item.favorite)
@@ -219,6 +309,12 @@ export async function toggleArchiveFavorite(id: string): Promise<boolean> {
 }
 
 export async function incrementPrintCount(id: string): Promise<number> {
+  if (_archiveCache) {
+    _archiveCache = _archiveCache.map((a) =>
+      a.id === id ? { ...a, printedCount: (a.printedCount || 0) + 1 } : a
+    )
+  }
+
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction('archive', 'readwrite')
@@ -236,6 +332,8 @@ export async function incrementPrintCount(id: string): Promise<number> {
 }
 
 export async function clearArchive(): Promise<void> {
+  _archiveCache = []
+
   syncFetch('/api/sync/archive/clear', {
     method: 'POST',
   }).catch(() => {})
@@ -253,32 +351,81 @@ export async function clearArchive(): Promise<void> {
 /* ================= CUSTOM PROPS OPERATIONS ================= */
 
 export async function getCustomProps(): Promise<CustomProp[]> {
-  const db = await openDB()
-
-  // 1. Fetch latest from Server Cloud
-  const serverProps = await syncFetch<CustomProp[]>('/api/sync/props')
-  if (serverProps && Array.isArray(serverProps)) {
-    try {
-      const tx = db.transaction('custom_props', 'readwrite')
-      const store = tx.objectStore('custom_props')
-      store.clear()
-      serverProps.forEach((p) => store.put(p))
-    } catch {}
-    return serverProps
+  if (_customPropsCache !== null) {
+    return [..._customPropsCache]
   }
 
-  // 2. Fallback to Local IndexedDB
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('custom_props', 'readonly')
-    const store = tx.objectStore('custom_props')
-    const req = store.getAll()
-    req.onsuccess = () => resolve(req.result as CustomProp[])
-    req.onerror = () => reject(req.error)
+  const db = await openDB()
+
+  // Read local IndexedDB first
+  const localProps = await new Promise<CustomProp[]>((resolve) => {
+    try {
+      const tx = db.transaction('custom_props', 'readonly')
+      const store = tx.objectStore('custom_props')
+      const req = store.getAll()
+      req.onsuccess = () => resolve(req.result as CustomProp[])
+      req.onerror = () => resolve([])
+    } catch {
+      resolve([])
+    }
   })
+
+  if (localProps.length > 0) {
+    _customPropsCache = localProps
+    // Background sync
+    if (!_customPropsFetchPromise) {
+      _customPropsFetchPromise = syncFetch<CustomProp[]>('/api/sync/props')
+        .then((serverProps) => {
+          if (serverProps && Array.isArray(serverProps)) {
+            _customPropsCache = serverProps
+            try {
+              const tx = db.transaction('custom_props', 'readwrite')
+              const store = tx.objectStore('custom_props')
+              store.clear()
+              serverProps.forEach((p) => store.put(p))
+            } catch {}
+          }
+          return _customPropsCache || []
+        })
+        .finally(() => {
+          _customPropsFetchPromise = null
+        })
+    }
+    return [..._customPropsCache]
+  }
+
+  // Cloud Fetch fallback
+  if (!_customPropsFetchPromise) {
+    _customPropsFetchPromise = syncFetch<CustomProp[]>('/api/sync/props')
+      .then((serverProps) => {
+        if (serverProps && Array.isArray(serverProps)) {
+          _customPropsCache = serverProps
+          try {
+            const tx = db.transaction('custom_props', 'readwrite')
+            const store = tx.objectStore('custom_props')
+            store.clear()
+            serverProps.forEach((p) => store.put(p))
+          } catch {}
+          return serverProps
+        }
+        _customPropsCache = localProps
+        return localProps
+      })
+      .finally(() => {
+        _customPropsFetchPromise = null
+      })
+  }
+
+  const res = await _customPropsFetchPromise
+  return [...res]
 }
 
 export async function saveCustomProp(prop: Omit<CustomProp, 'isCustom'>): Promise<CustomProp> {
   const completeProp: CustomProp = { ...prop, isCustom: true }
+
+  if (_customPropsCache) {
+    _customPropsCache = [completeProp, ..._customPropsCache.filter((p) => p.id !== completeProp.id)]
+  }
 
   // 1. Sync to Cloud Server
   syncFetch('/api/sync/props', {
@@ -298,6 +445,10 @@ export async function saveCustomProp(prop: Omit<CustomProp, 'isCustom'>): Promis
 }
 
 export async function deleteCustomProp(id: string): Promise<void> {
+  if (_customPropsCache) {
+    _customPropsCache = _customPropsCache.filter((p) => p.id !== id)
+  }
+
   syncFetch('/api/sync/props/delete', {
     method: 'POST',
     body: JSON.stringify({ id }),
@@ -363,34 +514,81 @@ export async function resetPropConfig(propId: string): Promise<void> {
 /* ================= CUSTOM STICKERS OPERATIONS ================= */
 
 export async function getCustomStickers(): Promise<CustomSticker[]> {
-  const db = await openDB()
-
-  // 1. Fetch latest from Server Cloud
-  const serverStickers = await syncFetch<CustomSticker[]>('/api/sync/stickers')
-  if (serverStickers && Array.isArray(serverStickers)) {
-    try {
-      const tx = db.transaction('custom_stickers', 'readwrite')
-      const store = tx.objectStore('custom_stickers')
-      store.clear()
-      serverStickers.forEach((s) => store.put(s))
-    } catch {}
-    return serverStickers
+  if (_customStickersCache !== null) {
+    return [..._customStickersCache]
   }
 
-  // 2. Fallback to Local IndexedDB
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('custom_stickers', 'readonly')
-    const store = tx.objectStore('custom_stickers')
-    const req = store.getAll()
-    req.onsuccess = () => resolve(req.result as CustomSticker[])
-    req.onerror = () => reject(req.error)
+  const db = await openDB()
+
+  // Read local IndexedDB first
+  const localStickers = await new Promise<CustomSticker[]>((resolve) => {
+    try {
+      const tx = db.transaction('custom_stickers', 'readonly')
+      const store = tx.objectStore('custom_stickers')
+      const req = store.getAll()
+      req.onsuccess = () => resolve(req.result as CustomSticker[])
+      req.onerror = () => resolve([])
+    } catch {
+      resolve([])
+    }
   })
+
+  if (localStickers.length > 0) {
+    _customStickersCache = localStickers
+    if (!_customStickersFetchPromise) {
+      _customStickersFetchPromise = syncFetch<CustomSticker[]>('/api/sync/stickers')
+        .then((serverStickers) => {
+          if (serverStickers && Array.isArray(serverStickers)) {
+            _customStickersCache = serverStickers
+            try {
+              const tx = db.transaction('custom_stickers', 'readwrite')
+              const store = tx.objectStore('custom_stickers')
+              store.clear()
+              serverStickers.forEach((s) => store.put(s))
+            } catch {}
+          }
+          return _customStickersCache || []
+        })
+        .finally(() => {
+          _customStickersFetchPromise = null
+        })
+    }
+    return [..._customStickersCache]
+  }
+
+  if (!_customStickersFetchPromise) {
+    _customStickersFetchPromise = syncFetch<CustomSticker[]>('/api/sync/stickers')
+      .then((serverStickers) => {
+        if (serverStickers && Array.isArray(serverStickers)) {
+          _customStickersCache = serverStickers
+          try {
+            const tx = db.transaction('custom_stickers', 'readwrite')
+            const store = tx.objectStore('custom_stickers')
+            store.clear()
+            serverStickers.forEach((s) => store.put(s))
+          } catch {}
+          return serverStickers
+        }
+        _customStickersCache = localStickers
+        return localStickers
+      })
+      .finally(() => {
+        _customStickersFetchPromise = null
+      })
+  }
+
+  const res = await _customStickersFetchPromise
+  return [...res]
 }
 
 export async function saveCustomSticker(
   sticker: Omit<CustomSticker, 'isCustom'>
 ): Promise<CustomSticker> {
   const completeSticker: CustomSticker = { ...sticker, isCustom: true }
+
+  if (_customStickersCache) {
+    _customStickersCache = [completeSticker, ..._customStickersCache.filter((s) => s.id !== completeSticker.id)]
+  }
 
   // 1. Sync to Cloud Server
   syncFetch('/api/sync/stickers', {
@@ -410,6 +608,10 @@ export async function saveCustomSticker(
 }
 
 export async function deleteCustomSticker(id: string): Promise<void> {
+  if (_customStickersCache) {
+    _customStickersCache = _customStickersCache.filter((s) => s.id !== id)
+  }
+
   syncFetch('/api/sync/stickers/delete', {
     method: 'POST',
     body: JSON.stringify({ id }),
@@ -569,34 +771,81 @@ export function recordStickerUsage(stickerId: string): void {
 /* ================= CUSTOM BACKGROUNDS OPERATIONS ================= */
 
 export async function getCustomBackgrounds(): Promise<CustomBackground[]> {
-  const db = await openDB()
-
-  // 1. Fetch latest from Server Cloud
-  const serverBgs = await syncFetch<CustomBackground[]>('/api/sync/backgrounds')
-  if (serverBgs && Array.isArray(serverBgs)) {
-    try {
-      const tx = db.transaction('custom_backgrounds', 'readwrite')
-      const store = tx.objectStore('custom_backgrounds')
-      store.clear()
-      serverBgs.forEach((b) => store.put(b))
-    } catch {}
-    return serverBgs
+  if (_customBackgroundsCache !== null) {
+    return [..._customBackgroundsCache]
   }
 
-  // 2. Fallback to Local IndexedDB
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('custom_backgrounds', 'readonly')
-    const store = tx.objectStore('custom_backgrounds')
-    const req = store.getAll()
-    req.onsuccess = () => resolve(req.result as CustomBackground[])
-    req.onerror = () => reject(req.error)
+  const db = await openDB()
+
+  // Read local IndexedDB first
+  const localBgs = await new Promise<CustomBackground[]>((resolve) => {
+    try {
+      const tx = db.transaction('custom_backgrounds', 'readonly')
+      const store = tx.objectStore('custom_backgrounds')
+      const req = store.getAll()
+      req.onsuccess = () => resolve(req.result as CustomBackground[])
+      req.onerror = () => resolve([])
+    } catch {
+      resolve([])
+    }
   })
+
+  if (localBgs.length > 0) {
+    _customBackgroundsCache = localBgs
+    if (!_customBackgroundsFetchPromise) {
+      _customBackgroundsFetchPromise = syncFetch<CustomBackground[]>('/api/sync/backgrounds')
+        .then((serverBgs) => {
+          if (serverBgs && Array.isArray(serverBgs)) {
+            _customBackgroundsCache = serverBgs
+            try {
+              const tx = db.transaction('custom_backgrounds', 'readwrite')
+              const store = tx.objectStore('custom_backgrounds')
+              store.clear()
+              serverBgs.forEach((b) => store.put(b))
+            } catch {}
+          }
+          return _customBackgroundsCache || []
+        })
+        .finally(() => {
+          _customBackgroundsFetchPromise = null
+        })
+    }
+    return [..._customBackgroundsCache]
+  }
+
+  if (!_customBackgroundsFetchPromise) {
+    _customBackgroundsFetchPromise = syncFetch<CustomBackground[]>('/api/sync/backgrounds')
+      .then((serverBgs) => {
+        if (serverBgs && Array.isArray(serverBgs)) {
+          _customBackgroundsCache = serverBgs
+          try {
+            const tx = db.transaction('custom_backgrounds', 'readwrite')
+            const store = tx.objectStore('custom_backgrounds')
+            store.clear()
+            serverBgs.forEach((b) => store.put(b))
+          } catch {}
+          return serverBgs
+        }
+        _customBackgroundsCache = localBgs
+        return localBgs
+      })
+      .finally(() => {
+        _customBackgroundsFetchPromise = null
+      })
+  }
+
+  const res = await _customBackgroundsFetchPromise
+  return [...res]
 }
 
 export async function saveCustomBackground(
   bg: Omit<CustomBackground, 'isCustom' | 'kind'>
 ): Promise<CustomBackground> {
   const completeBg: CustomBackground = { ...bg, kind: 'image', isCustom: true }
+
+  if (_customBackgroundsCache) {
+    _customBackgroundsCache = [completeBg, ..._customBackgroundsCache.filter((b) => b.id !== completeBg.id)]
+  }
 
   // 1. Sync to Cloud Server
   syncFetch('/api/sync/backgrounds', {
@@ -616,6 +865,10 @@ export async function saveCustomBackground(
 }
 
 export async function deleteCustomBackground(id: string): Promise<void> {
+  if (_customBackgroundsCache) {
+    _customBackgroundsCache = _customBackgroundsCache.filter((b) => b.id !== id)
+  }
+
   syncFetch('/api/sync/backgrounds/delete', {
     method: 'POST',
     body: JSON.stringify({ id }),

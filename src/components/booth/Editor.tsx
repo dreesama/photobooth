@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import QRCode from 'qrcode'
+import JSZip from 'jszip'
 import {
   Download,
   QrCode,
@@ -11,6 +12,11 @@ import {
   ExternalLink,
   RotateCcw,
   Palette,
+  FileArchive,
+  Image as ImageIcon,
+  Folder,
+  ChevronRight,
+  ChevronLeft,
 } from 'lucide-react'
 import {
   BACKGROUNDS,
@@ -47,7 +53,6 @@ import {
 } from '../../lib/db'
 import { uploadPhotoStrip } from '../../lib/upload'
 import StickerFolderModal from './StickerFolderModal'
-import { Folder } from 'lucide-react'
 
 type Props = {
   frames: HTMLCanvasElement[]
@@ -83,6 +88,9 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
   const [hostedUrl, setHostedUrl] = useState<string>('')
   const [qrError, setQrError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [showQrOnFrame, setShowQrOnFrame] = useState(true)
+  const [sessionQrUrl, setSessionQrUrl] = useState<string>('')
 
   const [bgsList, setBgsList] = useState<Background[]>(BACKGROUNDS)
   const [stickersList, setStickersList] = useState<StickerDef[]>(STICKERS)
@@ -109,6 +117,20 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
   const rawFramesDataUrls = useMemo(() => {
     return frames.map((f) => f.toDataURL('image/jpeg', 0.85))
   }, [frames])
+
+  // Pre-generate high-contrast QR code for frame footer
+  useEffect(() => {
+    const targetUrl = `${window.location.origin}/?photo=${archiveSessionIdRef.current}`
+    QRCode.toDataURL(targetUrl, {
+      margin: 1,
+      width: 280,
+      color: { dark: '#0f172a', light: '#ffffff' },
+    })
+      .then((url) => {
+        setSessionQrUrl(url)
+      })
+      .catch((e) => console.warn('Session QR generation warning:', e))
+  }, [])
 
   useEffect(() => {
     reloadBackgrounds(false).then((loadedBgs) => {
@@ -165,8 +187,10 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
       fontSizeScale,
       isBold,
       isItalic,
+      qrDataUrl: sessionQrUrl,
+      showQrOnFrame,
     })
-  }, [frames, template, filter, bg, frameColor, logo, customText, textColor, fontStyle, fontSizeScale, isBold, isItalic, ready])
+  }, [frames, template, filter, bg, frameColor, logo, customText, textColor, fontStyle, fontSizeScale, isBold, isItalic, sessionQrUrl, showQrOnFrame, ready])
 
   // Debounced persistence: saves customization state without blocking UI during dragging
   useEffect(() => {
@@ -212,6 +236,8 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
           fontSizeScale,
           isBold,
           isItalic,
+          qrDataUrl: sessionQrUrl,
+          showQrOnFrame,
         })
         const stripDataUrl = c.toDataURL('image/png')
         await saveToArchive({
@@ -233,7 +259,7 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
     return () => {
       if (archiveTimerRef.current) clearTimeout(archiveTimerRef.current)
     }
-  }, [frames, template, rawFramesDataUrls, filter, bg, frameColor, stickers, logo, customText, textColor, fontStyle, fontSizeScale, isBold, isItalic, ready])
+  }, [frames, template, rawFramesDataUrls, filter, bg, frameColor, stickers, logo, customText, textColor, fontStyle, fontSizeScale, isBold, isItalic, sessionQrUrl, showQrOnFrame, ready])
 
   const { width, height } = stripSize(template)
 
@@ -335,6 +361,8 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
         fontSizeScale,
         isBold,
         isItalic,
+        qrDataUrl: sessionQrUrl,
+        showQrOnFrame,
       })
 
       const dataUrl = c.toDataURL('image/png')
@@ -388,7 +416,54 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
     }
   }
 
-  // Handle QR Modal Open & Instant Upload
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false)
+
+  const downloadAllZip = async () => {
+    setShowDownloadMenu(false)
+    try {
+      const c = composeStrip({
+        frames,
+        template,
+        filter,
+        background: bg,
+        frameColor,
+        stickers,
+        logo: null,
+        customText,
+        textColor,
+        fontStyle,
+        fontSizeScale,
+        isBold,
+        isItalic,
+        qrDataUrl: sessionQrUrl,
+        showQrOnFrame,
+      })
+      const stripDataUrl = c.toDataURL('image/png')
+      const zip = new JSZip()
+      zip.file(`itguild-${Date.now()}-framed-strip.png`, stripDataUrl.split(',')[1], { base64: true })
+
+      frames.forEach((f, i) => {
+        const frameData = f.toDataURL('image/jpeg', 0.92).split(',')[1]
+        zip.file(`photo-${i + 1}.jpg`, frameData, { base64: true })
+      })
+
+      const blob = await zip.generateAsync({ type: 'blob' })
+      const blobUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = `itguild-all-photos-${Date.now()}.zip`
+      document.body.appendChild(link)
+      link.click()
+      setTimeout(() => {
+        document.body.removeChild(link)
+        URL.revokeObjectURL(blobUrl)
+      }, 1000)
+    } catch (e) {
+      console.warn('ZIP download error:', e)
+    }
+  }
+
+  // Handle QR Modal Open & Instant Fast Upload
   const handleOpenQR = async () => {
     setShowShare(true)
     setQrLoading(true)
@@ -397,11 +472,28 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
     setQrError(null)
 
     try {
-      const c = await composeStripAsync({ frames, template, filter, background: bg, frameColor, stickers, logo: null, customText, textColor, fontStyle, fontSizeScale, isBold, isItalic })
-      const stripDataUrl = c.toDataURL('image/png')
+      const c = await composeStripAsync({
+        frames,
+        template,
+        filter,
+        background: bg,
+        frameColor,
+        stickers,
+        logo: null,
+        customText,
+        textColor,
+        fontStyle,
+        fontSizeScale,
+        isBold,
+        isItalic,
+        qrDataUrl: sessionQrUrl,
+        showQrOnFrame,
+      })
+      // Use high-quality JPEG (quality 0.90) for 85%+ smaller file size and 5x faster upload
+      const stripDataUrl = c.toDataURL('image/jpeg', 0.90)
 
       // Save latest customized photo strip with all backgrounds, stickers, and filters to Archive
-      await saveToArchive({
+      saveToArchive({
         id: archiveSessionIdRef.current,
         stripDataUrl,
         rawFrames: rawFramesDataUrls,
@@ -413,7 +505,8 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
         textColor,
       }).catch(() => {})
 
-      const directUrl = await uploadPhotoStrip(stripDataUrl)
+      // Upload both framed strip and individual photo captures for complete softcopy download
+      const directUrl = await uploadPhotoStrip(stripDataUrl, rawFramesDataUrls, archiveSessionIdRef.current)
       setHostedUrl(directUrl)
 
       // Generate QR Code strictly for the public hosted image link
@@ -448,8 +541,10 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
         fontSizeScale,
         isBold,
         isItalic,
+        qrDataUrl: sessionQrUrl,
+        showQrOnFrame,
       })
-      const stripDataUrl = c.toDataURL('image/png')
+      const stripDataUrl = c.toDataURL('image/jpeg', 0.90)
 
       // Save to Archive DB
       await saveToArchive({
@@ -464,8 +559,8 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
         textColor,
       }).catch((e) => console.warn('Archive save error:', e))
 
-      // Also trigger cloud upload in background
-      uploadPhotoStrip(stripDataUrl).catch(() => {})
+      // Also trigger cloud upload in background with raw frames and matching session ID
+      uploadPhotoStrip(stripDataUrl, rawFramesDataUrls, archiveSessionIdRef.current).catch(() => {})
     } catch (e) {
       console.warn('Done save error:', e)
     } finally {
@@ -480,37 +575,67 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
   }
 
   return (
-    <div className="w-full h-screen max-h-screen overflow-hidden grid grid-cols-1 lg:grid-cols-[45%_55%] xl:grid-cols-[46%_54%] select-none">
-      {/* ================= LEFT HALF: Preview Title + Photo Strip + Download/QR/Done ================= */}
-      <div className="flex flex-col justify-between p-4 sm:p-5 lg:p-6 h-full max-h-screen overflow-hidden min-h-0 relative">
-        {/* Top Header: Preview */}
-        <div className="w-full flex items-center justify-between shrink-0">
-          <h2
-            className="font-pixel text-[#5b7fcb] text-2xl sm:text-3xl tracking-wider select-none"
-            style={{
-              textShadow: '0 3px 0 #9cb6ec, 0 6px 14px rgba(91,127,203,0.3)',
-            }}
-          >
-            Preview
-          </h2>
+    <div className="w-full h-screen max-h-screen overflow-hidden flex flex-row select-none">
+      {/* ================= LEFT: Preview Title + Photo Strip + Download/QR/Done ================= */}
+      <div
+        className={`flex flex-col justify-between p-3 sm:p-4 lg:p-5 h-full max-h-screen overflow-hidden min-h-0 relative transition-all duration-300 ${
+          isSidebarCollapsed ? 'w-full' : 'w-[46%] sm:w-[44%] lg:w-[42%] border-r-2 border-[#8198ed]/20'
+        } shrink-0`}
+      >
+        {/* Top Header: Preview Title + Retake + Collapsible Sidebar Toggle */}
+        <div className="w-full flex items-center justify-between shrink-0 mb-1 px-1">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <h2
+              className="font-pixel text-[#5b7fcb] text-xl sm:text-2xl lg:text-3xl tracking-wider select-none"
+              style={{
+                textShadow: '0 3px 0 #9cb6ec, 0 6px 14px rgba(91,127,203,0.3)',
+              }}
+            >
+              Preview
+            </h2>
+
+            <button
+              type="button"
+              onClick={onRetake}
+              className="font-pixel text-[10px] sm:text-xs text-[#5b7fcb] hover:text-[#3d5ba0] select-none cursor-pointer flex items-center gap-1.5 bg-white/90 hover:bg-white px-3 py-1.5 rounded-lg border border-[#cdd6f0] shadow-xs hover:shadow-md transition-all font-bold"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-[#5b7fcb]" />
+              <span>Retake</span>
+            </button>
+          </div>
+
+          {/* Collapsible Sidebar Toggle Button */}
           <button
-            onClick={onRetake}
-            className="font-pixel text-[10px] sm:text-xs text-[#8792c4] hover:text-[#5b7fcb] underline select-none cursor-pointer flex items-center gap-1.5 bg-white/80 hover:bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-xs transition-all"
+            type="button"
+            onClick={() => setIsSidebarCollapsed((v) => !v)}
+            className="font-pixel text-[10px] sm:text-xs text-[#5b7fcb] hover:text-[#3d5ba0] select-none cursor-pointer flex items-center gap-1.5 bg-white/90 hover:bg-white px-2.5 py-1.5 rounded-lg border border-[#cdd6f0] shadow-xs hover:shadow-md transition-all font-bold"
+            title={isSidebarCollapsed ? 'Show Customization Sidebar' : 'Hide Sidebar (Larger Preview)'}
           >
-            <RotateCcw className="w-3 h-3" />
-            <span>Retake</span>
+            {isSidebarCollapsed ? (
+              <>
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Tools & Filters</span>
+              </>
+            ) : (
+              <>
+                <span>Hide Tools</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </>
+            )}
           </button>
         </div>
 
-        {/* Center: Large High-Visibility Photo Strip Canvas */}
-        <div className="my-auto flex-1 min-h-0 flex items-center justify-center py-2 sm:py-3 overflow-hidden">
+        {/* Center: 100% Fit Photo Strip Canvas (Never cut or clipped horizontally/vertically) */}
+        <div className="my-auto flex-1 min-h-0 min-w-0 w-full flex items-center justify-center py-1 sm:py-2 px-1 overflow-hidden">
           <div
             ref={stageRef}
-            className="relative bg-white shadow-[0_16px_40px_rgba(90,110,185,0.28)] rounded-xs select-none touch-none"
+            className="relative bg-white shadow-[0_20px_50px_rgba(90,110,185,0.3)] rounded-xs select-none touch-none"
             style={{
-              height: '100%',
-              maxHeight: 'min(72vh, 620px)',
+              maxWidth: '100%',
+              maxHeight: '100%',
               aspectRatio: `${width} / ${height}`,
+              width: 'auto',
+              height: 'auto',
             }}
             onPointerMove={onStageMove}
             onPointerUp={() => (drag.current = null)}
@@ -539,7 +664,7 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
                     left: `${s.x * 100}%`,
                     top: `${s.y * 100}%`,
                     transform: `translate(-50%,-50%) rotate(${s.rotation}deg)`,
-                    width: `${s.scale * 44}px`,
+                    width: `${s.scale * 48}px`,
                   }}
                 >
                   <div
@@ -559,7 +684,7 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
                         type="button"
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => deleteSticker(s.uid, e)}
-                        className="absolute -top-2.5 -right-2.5 size-5 bg-rose-500 hover:bg-rose-600 active:scale-90 text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-md cursor-pointer z-40 transition-transform"
+                        className="absolute -top-3 -right-3 size-6 bg-rose-500 hover:bg-rose-600 active:scale-90 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md cursor-pointer z-40 transition-transform"
                         title="Delete sticker"
                       >
                         ✕
@@ -573,17 +698,41 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
         </div>
 
         {/* Bottom Bar: Download, QR, Done (Always visible) */}
-        <div className="flex items-center gap-2.5 sm:gap-3 w-full max-w-[460px] mx-auto shrink-0 pt-2 pb-1">
-          {/* Download Button with outer white container card */}
-          <div className="flex-1 p-0.5 bg-white rounded-xl shadow-[0_4px_12px_rgba(100,120,190,0.18)]">
+        <div className="flex items-center gap-3 sm:gap-4 w-full max-w-[500px] mx-auto shrink-0 pt-1.5 pb-1">
+          {/* Download Button with outer white container card & Dropdown */}
+          <div className="flex-1 p-0.5 bg-white rounded-xl shadow-[0_4px_12px_rgba(100,120,190,0.18)] relative">
             <button
               type="button"
-              onClick={download}
-              className="w-full bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white py-2.5 sm:py-3 rounded-lg font-pixel text-[10px] sm:text-xs tracking-wider shadow-[2px_2px_0px_#5b6fbc] transition-all cursor-pointer select-none text-center flex items-center justify-center gap-1.5"
+              onClick={() => setShowDownloadMenu((v) => !v)}
+              className="w-full bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white py-3 sm:py-3.5 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[2px_2px_0px_#5b6fbc] transition-all cursor-pointer select-none text-center flex items-center justify-center gap-2"
             >
-              <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <Download className="w-4 h-4" />
               <span>Download</span>
             </button>
+
+            {showDownloadMenu && (
+              <div className="absolute bottom-full left-0 mb-2 w-60 bg-white rounded-xl shadow-2xl p-2 flex flex-col gap-1 border border-slate-200 z-50 animate-in zoom-in-95 duration-150">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDownloadMenu(false)
+                    download()
+                  }}
+                  className="w-full font-pixel text-[10px] sm:text-xs text-left px-3 py-2.5 rounded-lg hover:bg-[#eef2ff] text-[#5b7fcb] flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <ImageIcon className="w-4 h-4 text-[#8198ed]" />
+                  <span>Framed Strip (.PNG)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={downloadAllZip}
+                  className="w-full font-pixel text-[10px] sm:text-xs text-left px-3 py-2.5 rounded-lg hover:bg-[#eef2ff] text-[#5b7fcb] flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <FileArchive className="w-4 h-4 text-[#52b788]" />
+                  <span>All Photos + Strip (.ZIP)</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* QR Button with outer white container card */}
@@ -591,9 +740,9 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
             <button
               type="button"
               onClick={handleOpenQR}
-              className="w-full bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white py-2.5 sm:py-3 rounded-lg font-pixel text-[10px] sm:text-xs tracking-wider shadow-[2px_2px_0px_#5b6fbc] transition-all cursor-pointer select-none flex items-center justify-center gap-1.5"
+              className="w-full bg-[#8198ed] hover:bg-[#6e88e8] active:translate-y-0.5 text-white py-3 sm:py-3.5 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[2px_2px_0px_#5b6fbc] transition-all cursor-pointer select-none flex items-center justify-center gap-2"
             >
-              <QrCode className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <QrCode className="w-4 h-4" />
               <span>QR</span>
             </button>
           </div>
@@ -603,311 +752,353 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
             <button
               type="button"
               onClick={handleDone}
-              className="w-full bg-[#52b788] hover:bg-[#40916c] active:translate-y-0.5 text-white py-2.5 sm:py-3 rounded-lg font-pixel text-[10px] sm:text-xs tracking-wider shadow-[2px_2px_0px_#2d6a4f] transition-all cursor-pointer select-none flex items-center justify-center gap-1.5"
+              className="w-full bg-[#52b788] hover:bg-[#40916c] active:translate-y-0.5 text-white py-3 sm:py-3.5 rounded-lg font-pixel text-xs sm:text-sm tracking-wider shadow-[2px_2px_0px_#2d6a4f] transition-all cursor-pointer select-none flex items-center justify-center gap-2"
             >
-              <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <Check className="w-4 h-4" />
               <span>Done</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* ================= RIGHT HALF: Full Height Customization Panel ================= */}
-      <div className="bg-[#efefff] h-full max-h-screen px-5 sm:px-8 lg:px-10 py-5 sm:py-6 overflow-y-auto space-y-6 shadow-2xl flex flex-col justify-start scrollbar-thin">
-        {/* ---- 1. Filters ---- */}
-        <section>
-          <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
-            Filters
-          </h3>
-          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-2.5">
-            {FILTERS.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setFilter(f.id)}
-                className="flex flex-col items-center group cursor-pointer text-left"
-              >
-                <div
-                  className={`relative w-full aspect-square overflow-hidden bg-[#1e2337] rounded-lg transition-all ${
-                    filter === f.id
-                      ? 'ring-3 ring-[#8198ed] shadow-md scale-105'
-                      : 'hover:scale-105 opacity-90 hover:opacity-100'
-                  }`}
-                >
-                  {firstFrameThumb && (
-                    <img
-                      src={firstFrameThumb}
-                      alt=""
-                      className="w-full h-full object-cover pointer-events-none"
-                      style={{ filter: f.id === 'pixelate' ? 'contrast(1.05)' : f.css }}
-                    />
-                  )}
-                  {filter === f.id && (
-                    <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-[#5b7fcb] text-white grid place-items-center text-[9px] font-bold shadow">
-                      <Check className="w-2.5 h-2.5" />
-                    </span>
-                  )}
-                </div>
-                <p className="font-pixel text-[6px] sm:text-[7px] text-[#5b7fcb] text-center mt-1 truncate w-full group-hover:text-[#4162b8]">
-                  {f.label}
-                </p>
-              </button>
-            ))}
+      {/* ================= RIGHT: Full Height Customization Panel ================= */}
+      <div
+        className={`bg-[#efefff] h-full max-h-screen transition-all duration-300 overflow-y-auto shadow-2xl flex flex-col justify-start scrollbar-thin ${
+          isSidebarCollapsed ? 'hidden w-0 p-0' : 'flex-1 px-4 sm:px-6 lg:px-8 py-4 sm:py-5 space-y-6'
+        }`}
+      >
+        {/* Top Panel Header */}
+        <div className="flex items-center justify-between pb-2.5 border-b-2 border-[#8198ed]/20 shrink-0">
+          <div className="flex items-center gap-2">
+            <Palette className="w-5 h-5 text-[#5b7fcb]" />
+            <h3 className="font-pixel text-[#5b7fcb] text-base sm:text-lg font-bold tracking-wider">
+              Tools & Filters
+            </h3>
           </div>
-        </section>
+        </div>
 
-        {/* ---- 2. Background ---- */}
-        <section>
-          <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-2 select-none">
-            Background
-          </h3>
-          {/* Container with top and bottom padding so scale-105 and rings are never clipped */}
-          <div className="flex gap-3 overflow-x-auto pt-2 pb-3 px-1.5 scrollbar-thin items-center">
-            {/* None Option */}
-            <button
-              onClick={() => handleSelectBg(BACKGROUNDS[0])}
-              className={`shrink-0 size-16 sm:size-20 rounded-xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex items-center justify-center transition-all cursor-pointer ${
-                bg.id === 'none' ? 'ring-3 ring-[#ff80a0] shadow-md scale-105' : 'hover:scale-105'
-              }`}
-            >
-              <Ban className="w-5 h-5 text-rose-400" />
-            </button>
-
-            {/* Pattern/Frame image backgrounds */}
-            {bgsList.filter((b) => b.kind === 'image' && b.url).map((b) => (
-              <button
-                key={b.id}
-                onClick={() => handleSelectBg(b)}
-                className={`shrink-0 size-16 sm:size-20 rounded-xl overflow-hidden border-2 bg-white transition-all cursor-pointer ${
-                  bg.id === b.id
-                    ? 'border-[#8198ed] ring-3 ring-[#8198ed]/50 shadow-md scale-105'
-                    : 'border-[#cdd6f0] hover:scale-105'
-                }`}
-              >
-                <img src={b.url} alt="" className="w-full h-full object-cover" />
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* ---- 3. Stickers ---- */}
-        <section>
-          <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
-            Stickers
-          </h3>
-
-          <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5 sm:gap-3 max-w-[620px]">
-            {/* Clear All Stickers Button */}
-            <button
-              type="button"
-              onClick={() => setStickers([])}
-              className="size-16 sm:size-20 rounded-xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex flex-col items-center justify-center transition-all cursor-pointer hover:scale-105 shadow-xs"
-              title="Clear all stickers"
-            >
-              <Trash2 className="w-4 h-4 text-rose-400 mb-0.5" />
-              <span className="font-pixel text-[8px] text-rose-400">Clear</span>
-            </button>
-
-            {/* Browse Packs / Folders Button */}
-            <button
-              type="button"
-              onClick={() => setShowFolderModal(true)}
-              className="relative size-16 sm:size-20 rounded-xl bg-gradient-to-tr from-[#5b6fbc] to-[#8198ed] text-white border-2 border-white/60 hover:border-white hover:scale-105 active:scale-95 flex items-center justify-center transition-all cursor-pointer shadow-md group"
-              title="Browse sticker folders (MLBB, Valorant, etc.)"
-            >
-              <Folder className="w-7 h-7 sm:w-8 sm:h-8 text-white group-hover:scale-110 transition-transform drop-shadow-sm" />
-            </button>
-
-            {/* Top 10 Most / Recently Used Stickers */}
-            {quickStickers.map((s) => {
-              const placedCount = stickers.filter((st) => st.src === s.src).length
-              return (
+          {/* ---- 1. Filters ---- */}
+          <section>
+            <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
+              Filters
+            </h3>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 sm:gap-4">
+              {FILTERS.map((f) => (
                 <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => {
-                    recordStickerUsage(s.id)
-                    addSticker(s.src)
-                  }}
-                  className="relative size-16 sm:size-20 rounded-xl bg-[#e8eeff] hover:bg-white border-2 border-transparent hover:border-[#8198ed] hover:scale-105 active:scale-95 flex flex-col items-center justify-center p-1.5 transition-all cursor-pointer shadow-xs group"
-                  title={`${s.label} (${s.category || 'General'})`}
+                  key={f.id}
+                  onClick={() => setFilter(f.id)}
+                  className="flex flex-col items-center group cursor-pointer text-left"
                 >
-                  <img
-                    src={s.src}
-                    alt={s.label}
-                    className="max-h-9 sm:max-h-11 max-w-full object-contain pointer-events-none group-hover:scale-105 transition-transform"
-                  />
-                  <span className="font-pixel text-[7px] text-[#5b7fcb] truncate w-full mt-1 text-center">
-                    {s.label}
-                  </span>
-                  {placedCount > 0 && (
-                    <span className="absolute top-1 right-1 bg-[#8198ed] text-white text-[9px] font-bold rounded-full size-4 flex items-center justify-center shadow-xs">
-                      {placedCount}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </section>
-
-        {/* ---- 4. Custom Text ---- */}
-        <section>
-          <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
-            Text
-          </h3>
-          <div className="flex flex-col gap-3 max-w-[560px]">
-            {/* Custom Text Input Bar */}
-            <div className="flex gap-2 w-full">
-              <input
-                type="text"
-                placeholder="Write custom text (or leave blank)..."
-                value={customText}
-                onChange={(e) => setCustomText(e.target.value)}
-                className="flex-1 bg-white border border-[#cdd6f0] focus:border-[#8198ed] focus:ring-2 focus:ring-[#8198ed]/30 px-3 py-2 rounded-xl font-mono text-xs text-[#334155] outline-none shadow-xs"
-              />
-              <button
-                type="button"
-                onClick={() => setCustomText('')}
-                className="btn95 !px-3 !py-1.5 text-[10px] font-bold text-[#ff5c8a] shrink-0"
-                title="Clear text (Blank Polaroid)"
-              >
-                ✕ Blank
-              </button>
-            </div>
-
-            {/* Font Style Picker */}
-            <div className="flex flex-col gap-1.5 pt-1">
-              <span className="font-pixel text-[9px] text-[#5b7fcb] tracking-wider">Font Style:</span>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {FONT_OPTIONS.map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    onClick={() => setFontStyle(f.id)}
-                    className={`py-2 px-2 rounded-xl border text-center transition-all cursor-pointer shadow-xs truncate flex flex-col items-center justify-center gap-0.5 ${
-                      fontStyle === f.id
-                        ? 'bg-[#8198ed] text-white border-[#5b6fbc] ring-2 ring-[#8198ed]/50 shadow-md scale-[1.02]'
-                        : 'bg-white text-[#334155] border-[#cdd6f0] hover:border-[#8198ed] hover:bg-[#f8faff]'
+                  <div
+                    className={`relative w-full aspect-square overflow-hidden bg-[#1e2337] rounded-2xl transition-all ${
+                      filter === f.id
+                        ? 'ring-4 ring-[#8198ed] shadow-lg scale-105'
+                        : 'hover:scale-105 opacity-90 hover:opacity-100 border-2 border-white/60'
                     }`}
                   >
-                    <span
-                      className="text-xs sm:text-sm leading-tight"
-                      style={{ fontFamily: f.family.replace(/"/g, '') }}
-                    >
-                      {f.sample}
-                    </span>
-                    <span
-                      className={`text-[8px] font-pixel truncate opacity-80 ${
-                        fontStyle === f.id ? 'text-white' : 'text-[#8792c4]'
-                      }`}
-                    >
-                      {f.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
+                    {firstFrameThumb && (
+                      <img
+                        src={firstFrameThumb}
+                        alt=""
+                        className="w-full h-full object-cover pointer-events-none"
+                        style={{ filter: f.id === 'pixelate' ? 'contrast(1.05)' : f.css }}
+                      />
+                    )}
+                    {filter === f.id && (
+                      <span className="absolute top-1.5 right-1.5 size-6 rounded-full bg-[#5b7fcb] text-white grid place-items-center text-xs font-bold shadow-md">
+                        <Check className="w-3.5 h-3.5" />
+                      </span>
+                    )}
+                  </div>
+                  <p className="font-pixel text-[9px] sm:text-[10px] text-[#5b7fcb] text-center mt-2 truncate w-full font-bold group-hover:text-[#4162b8]">
+                    {f.label}
+                  </p>
+                </button>
+              ))}
             </div>
+          </section>
 
-            {/* Font Size & Formatting Toolbar (Bold / Italic / Size Slider & Stepper) */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 pt-1">
-              {/* Bold & Italic Toggles */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="font-pixel text-[9px] text-[#5b7fcb] tracking-wider mr-0.5">Style:</span>
+          {/* ---- 2. Background ---- */}
+          <section>
+            <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-2.5 select-none">
+              Background
+            </h3>
+            <div className="flex gap-4 overflow-x-auto pt-1 pb-3 px-1 scrollbar-thin items-center">
+              {/* None Option */}
+              <button
+                onClick={() => handleSelectBg(BACKGROUNDS[0])}
+                className={`shrink-0 size-24 sm:size-28 rounded-2xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex flex-col items-center justify-center transition-all cursor-pointer ${
+                  bg.id === 'none' ? 'ring-4 ring-[#ff80a0] shadow-xl scale-105' : 'hover:scale-105'
+                }`}
+                title="No background (plain white)"
+              >
+                <Ban className="w-8 h-8 text-rose-400 mb-1" />
+                <span className="font-pixel text-[9px] text-rose-400 font-bold">Plain</span>
+              </button>
+
+              {/* Pattern/Frame image backgrounds */}
+              {bgsList.filter((b) => b.kind === 'image' && b.url).map((b) => (
                 <button
-                  type="button"
-                  onClick={() => setIsBold((b) => !b)}
-                  title="Toggle Bold"
-                  className={`size-8 rounded-lg border font-bold text-sm flex items-center justify-center transition-all cursor-pointer shadow-xs ${
-                    isBold
-                      ? 'bg-[#8198ed] text-white border-[#5b6fbc] shadow-md ring-2 ring-[#8198ed]/50'
-                      : 'bg-white text-slate-600 border-[#cdd6f0] hover:bg-[#f8faff]'
+                  key={b.id}
+                  onClick={() => handleSelectBg(b)}
+                  className={`shrink-0 size-24 sm:size-28 rounded-2xl overflow-hidden border-2 bg-white transition-all cursor-pointer ${
+                    bg.id === b.id
+                      ? 'border-[#8198ed] ring-4 ring-[#8198ed]/50 shadow-xl scale-105'
+                      : 'border-[#cdd6f0] hover:scale-105'
                   }`}
                 >
-                  <span className="font-serif font-black">B</span>
+                  <img src={b.url} alt="" className="w-full h-full object-cover" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setIsItalic((i) => !i)}
-                  title="Toggle Italic"
-                  className={`size-8 rounded-lg border text-sm flex items-center justify-center transition-all cursor-pointer shadow-xs ${
-                    isItalic
-                      ? 'bg-[#8198ed] text-white border-[#5b6fbc] shadow-md ring-2 ring-[#8198ed]/50'
-                      : 'bg-white text-slate-600 border-[#cdd6f0] hover:bg-[#f8faff]'
-                  }`}
-                >
-                  <span className="font-serif italic font-bold">I</span>
-                </button>
-              </div>
+              ))}
+            </div>
+          </section>
 
-              {/* Font Size Slider & Stepper */}
-              <div className="flex-1 flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-[#cdd6f0] shadow-xs">
-                <span className="font-pixel text-[9px] text-[#5b7fcb] tracking-wider shrink-0">Size:</span>
-                <button
-                  type="button"
-                  onClick={() => setFontSizeScale((s) => Math.max(0.6, Number((s - 0.1).toFixed(1))))}
-                  className="size-5 rounded bg-[#e8eeff] hover:bg-[#d8e4ff] text-[#5b7fcb] font-bold text-xs flex items-center justify-center cursor-pointer select-none"
-                  title="Decrease Size"
-                >
-                  -
-                </button>
+          {/* ---- 3. Stickers ---- */}
+          <section>
+            <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
+              Stickers
+            </h3>
+
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-4 gap-3 sm:gap-4 max-w-[680px]">
+              {/* Clear All Stickers Button */}
+              <button
+                type="button"
+                onClick={() => setStickers([])}
+                className="size-24 sm:size-28 rounded-2xl bg-[#ffe5ec] border-2 border-[#ffb3c6] flex flex-col items-center justify-center transition-all cursor-pointer hover:scale-105 shadow-sm"
+                title="Clear all stickers"
+              >
+                <Trash2 className="w-7 h-7 text-rose-400 mb-1" />
+                <span className="font-pixel text-[10px] text-rose-400 font-bold">Clear</span>
+              </button>
+
+              {/* Browse Packs / Folders Button */}
+              <button
+                type="button"
+                onClick={() => setShowFolderModal(true)}
+                className="relative size-24 sm:size-28 rounded-2xl bg-gradient-to-tr from-[#5b6fbc] to-[#8198ed] text-white border-2 border-white/60 hover:border-white hover:scale-105 active:scale-95 flex flex-col items-center justify-center transition-all cursor-pointer shadow-md group"
+                title="Browse sticker folders (MLBB, Valorant, etc.)"
+              >
+                <Folder className="w-8 h-8 sm:w-9 sm:h-9 text-white group-hover:scale-110 transition-transform drop-shadow-sm mb-1" />
+                <span className="font-pixel text-[9px] sm:text-[10px] text-white font-bold">Packs</span>
+              </button>
+
+              {/* Top 10 Most / Recently Used Stickers */}
+              {quickStickers.map((s) => {
+                const placedCount = stickers.filter((st) => st.src === s.src).length
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      recordStickerUsage(s.id)
+                      addSticker(s.src)
+                    }}
+                    className="relative size-24 sm:size-28 rounded-2xl bg-[#e8eeff] hover:bg-white border-2 border-transparent hover:border-[#8198ed] hover:scale-105 active:scale-95 flex flex-col items-center justify-center p-2.5 transition-all cursor-pointer shadow-sm group"
+                    title={`${s.label} (${s.category || 'General'})`}
+                  >
+                    <img
+                      src={s.src}
+                      alt={s.label}
+                      className="max-h-13 sm:max-h-15 max-w-full object-contain pointer-events-none group-hover:scale-105 transition-transform"
+                    />
+                    <span className="font-pixel text-[9px] sm:text-[10px] text-[#5b7fcb] truncate w-full mt-1.5 text-center font-bold">
+                      {s.label}
+                    </span>
+                    {placedCount > 0 && (
+                      <span className="absolute top-1.5 right-1.5 bg-[#8198ed] text-white text-xs font-bold rounded-full size-6 flex items-center justify-center shadow-md">
+                        {placedCount}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
+          {/* ---- 4. Custom Text ---- */}
+          <section>
+            <h3 className="font-pixel text-[#5b7fcb] text-lg sm:text-xl tracking-wider mb-3 select-none">
+              Text
+            </h3>
+            <div className="flex flex-col gap-3.5 max-w-[620px]">
+              {/* Custom Text Input Bar */}
+              <div className="flex gap-2.5 w-full">
                 <input
-                  type="range"
-                  min="0.6"
-                  max="1.5"
-                  step="0.05"
-                  value={fontSizeScale}
-                  onChange={(e) => setFontSizeScale(parseFloat(e.target.value))}
-                  className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#8198ed]"
+                  type="text"
+                  placeholder="Write custom text (or leave blank)..."
+                  value={customText}
+                  onChange={(e) => setCustomText(e.target.value)}
+                  className="flex-1 bg-white border-2 border-[#cdd6f0] focus:border-[#8198ed] focus:ring-2 focus:ring-[#8198ed]/30 px-4 py-3 rounded-xl font-mono text-sm text-[#334155] outline-none shadow-xs"
                 />
                 <button
                   type="button"
-                  onClick={() => setFontSizeScale((s) => Math.min(1.5, Number((s + 0.1).toFixed(1))))}
-                  className="size-5 rounded bg-[#e8eeff] hover:bg-[#d8e4ff] text-[#5b7fcb] font-bold text-xs flex items-center justify-center cursor-pointer select-none"
-                  title="Increase Size"
+                  onClick={() => setCustomText('')}
+                  className="btn95 !px-5 !py-2.5 text-xs sm:text-sm font-bold text-[#ff5c8a] shrink-0"
+                  title="Clear text (Blank Polaroid)"
                 >
-                  +
+                  ✕ Blank
                 </button>
-                <span className="font-mono text-[10px] text-slate-500 w-8 text-right shrink-0">
-                  {Math.round(fontSizeScale * 100)}%
-                </span>
               </div>
-            </div>
 
-            {/* Text Color Swatches */}
-            <div className="flex flex-col gap-1.5 pt-1">
-              <span className="font-pixel text-[9px] text-[#5b7fcb] tracking-wider">Text Color:</span>
-              <div className="flex items-center gap-2 flex-wrap">
-                {TEXT_COLORS.map((tc) => (
+              {/* Font Style Picker */}
+              <div className="flex flex-col gap-2 pt-1">
+                <span className="font-pixel text-[11px] sm:text-xs text-[#5b7fcb] font-bold tracking-wider">Font Style:</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {FONT_OPTIONS.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setFontStyle(f.id)}
+                      className={`py-3 px-3.5 min-h-[64px] rounded-xl border-2 text-center transition-all cursor-pointer shadow-xs truncate flex flex-col items-center justify-center gap-1 ${
+                        fontStyle === f.id
+                          ? 'bg-[#8198ed] text-white border-[#5b6fbc] ring-2 ring-[#8198ed]/50 shadow-md scale-[1.02]'
+                          : 'bg-white text-[#334155] border-[#cdd6f0] hover:border-[#8198ed] hover:bg-[#f8faff]'
+                      }`}
+                    >
+                      <span
+                        className="text-base sm:text-lg leading-tight"
+                        style={{ fontFamily: f.family.replace(/"/g, '') }}
+                      >
+                        {f.sample}
+                      </span>
+                      <span
+                        className={`text-[9px] font-pixel truncate opacity-85 ${
+                          fontStyle === f.id ? 'text-white' : 'text-[#8792c4]'
+                        }`}
+                      >
+                        {f.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Font Size & Formatting Toolbar (Bold / Italic / Size Slider & Stepper) */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
+                {/* Bold & Italic Toggles */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="font-pixel text-[11px] text-[#5b7fcb] font-bold tracking-wider mr-0.5">Style:</span>
                   <button
-                    key={tc.id}
-                    onClick={() => setTextColor(tc.color)}
-                    title={tc.label}
-                    className={`size-7 rounded-full border-2 transition-transform cursor-pointer shadow-xs ${
-                      textColor.toLowerCase() === tc.color.toLowerCase()
-                        ? 'border-[#5b7fcb] scale-110 ring-2 ring-[#8198ed]'
-                        : 'border-slate-300 hover:scale-105'
+                    type="button"
+                    onClick={() => setIsBold((b) => !b)}
+                    title="Toggle Bold"
+                    className={`size-10 rounded-xl border-2 font-bold text-base flex items-center justify-center transition-all cursor-pointer shadow-xs ${
+                      isBold
+                        ? 'bg-[#8198ed] text-white border-[#5b6fbc] shadow-md ring-2 ring-[#8198ed]/50'
+                        : 'bg-white text-slate-600 border-[#cdd6f0] hover:bg-[#f8faff]'
                     }`}
-                    style={{ backgroundColor: tc.color }}
-                  />
-                ))}
-                {/* Custom Color Input */}
-                <label
-                  title="Custom Color"
-                  className="size-7 rounded-full border-2 border-dashed border-[#8198ed] grid place-items-center cursor-pointer hover:scale-105 bg-white shadow-xs text-xs overflow-hidden text-[#8198ed]"
-                >
-                  <Palette className="w-3 h-3" />
+                  >
+                    <span className="font-serif font-black">B</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsItalic((i) => !i)}
+                    title="Toggle Italic"
+                    className={`size-10 rounded-xl border-2 text-base flex items-center justify-center transition-all cursor-pointer shadow-xs ${
+                      isItalic
+                        ? 'bg-[#8198ed] text-white border-[#5b6fbc] shadow-md ring-2 ring-[#8198ed]/50'
+                        : 'bg-white text-slate-600 border-[#cdd6f0] hover:bg-[#f8faff]'
+                    }`}
+                  >
+                    <span className="font-serif italic font-bold">I</span>
+                  </button>
+                </div>
+
+                {/* Font Size Slider & Stepper */}
+                <div className="flex-1 flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border-2 border-[#cdd6f0] shadow-xs">
+                  <span className="font-pixel text-[11px] text-[#5b7fcb] font-bold tracking-wider shrink-0">Size:</span>
+                  <button
+                    type="button"
+                    onClick={() => setFontSizeScale((s) => Math.max(0.6, Number((s - 0.1).toFixed(1))))}
+                    className="size-7 rounded-lg bg-[#e8eeff] hover:bg-[#d8e4ff] text-[#5b7fcb] font-bold text-base flex items-center justify-center cursor-pointer select-none"
+                    title="Decrease Size"
+                  >
+                    -
+                  </button>
                   <input
-                    type="color"
-                    value={textColor}
-                    onChange={(e) => setTextColor(e.target.value)}
-                    className="opacity-0 absolute size-0"
+                    type="range"
+                    min="0.6"
+                    max="1.5"
+                    step="0.05"
+                    value={fontSizeScale}
+                    onChange={(e) => setFontSizeScale(parseFloat(e.target.value))}
+                    className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#8198ed]"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setFontSizeScale((s) => Math.min(1.5, Number((s + 0.1).toFixed(1))))}
+                    className="size-7 rounded-lg bg-[#e8eeff] hover:bg-[#d8e4ff] text-[#5b7fcb] font-bold text-base flex items-center justify-center cursor-pointer select-none"
+                    title="Increase Size"
+                  >
+                    +
+                  </button>
+                  <span className="font-mono text-xs text-slate-500 w-10 text-right shrink-0">
+                    {Math.round(fontSizeScale * 100)}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Text Color Swatches */}
+              <div className="flex flex-col gap-2 pt-1">
+                <span className="font-pixel text-[11px] sm:text-xs text-[#5b7fcb] font-bold tracking-wider">Text Color:</span>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {TEXT_COLORS.map((tc) => (
+                    <button
+                      key={tc.id}
+                      onClick={() => setTextColor(tc.color)}
+                      title={tc.label}
+                      className={`size-9 sm:size-10 rounded-xl border-2 transition-transform cursor-pointer shadow-xs ${
+                        textColor.toLowerCase() === tc.color.toLowerCase()
+                          ? 'border-[#5b7fcb] scale-110 ring-3 ring-[#8198ed]'
+                          : 'border-slate-300 hover:scale-105'
+                      }`}
+                      style={{ backgroundColor: tc.color }}
+                    />
+                  ))}
+                  {/* Custom Color Input */}
+                  <label
+                    title="Custom Color"
+                    className="size-9 sm:size-10 rounded-xl border-2 border-dashed border-[#8198ed] grid place-items-center cursor-pointer hover:scale-105 bg-white shadow-xs text-xs overflow-hidden text-[#8198ed]"
+                  >
+                    <Palette className="w-5 h-5" />
+                    <input
+                      type="color"
+                      value={textColor}
+                      onChange={(e) => setTextColor(e.target.value)}
+                      className="opacity-0 absolute size-0"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Mini QR Code on Frame Toggle (Life4Cuts / Photoism Style) */}
+              <div className="flex items-center justify-between bg-white p-3.5 sm:p-4 rounded-xl border-2 border-[#cdd6f0] shadow-xs mt-1">
+                <div className="flex items-center gap-3">
+                  <div className="size-9 rounded-lg bg-[#e8eeff] flex items-center justify-center text-[#5b7fcb] shrink-0">
+                    <QrCode className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="font-pixel text-xs text-[#5b7fcb] font-bold">
+                      Mini QR Code on Frame
+                    </p>
+                    <p className="font-sans text-[11px] text-slate-500 mt-0.5">
+                      Adds a crisp mini QR in the bottom corner for guests to scan prints at home.
+                    </p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                  <input
+                    type="checkbox"
+                    checked={showQrOnFrame}
+                    onChange={(e) => setShowQrOnFrame(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#8198ed]"></div>
                 </label>
               </div>
             </div>
-          </div>
-        </section>
-      </div>
+          </section>
+        </div>
 
       {/* ================= Scan to Download Modal ================= */}
       {showShare && (
@@ -943,9 +1134,16 @@ export default function Editor({ frames, template, onRetake, onDone }: Props) {
                     className="size-48 sm:size-56 object-contain rounded-lg"
                   />
                 </div>
-                <p className="font-pixel text-[10px] sm:text-xs text-[#5b7fcb] mb-4 tracking-wider select-none">
+                <p className="font-pixel text-[10px] sm:text-xs text-[#5b7fcb] mb-2.5 tracking-wider select-none">
                   Scan with your phone camera to save!
                 </p>
+
+                {/* 30-Day Expiry Notice */}
+                <div className="w-full bg-[#f0f4ff] rounded-xl p-2.5 border border-[#d2dfff] text-center mb-3">
+                  <p className="font-sans text-[11px] text-[#5b7fcb] font-medium">
+                    ⏳ <strong>Note:</strong> Photos are available for softcopy download for <strong>30 days</strong>.
+                  </p>
+                </div>
 
                 {/* Direct Action Buttons */}
                 <div className="flex flex-col gap-2 w-full pt-1">

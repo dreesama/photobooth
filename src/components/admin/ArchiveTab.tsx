@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import JSZip from 'jszip'
+import QRCode from 'qrcode'
 import {
   Star,
   Download,
@@ -10,8 +11,12 @@ import {
   Copy,
   Check,
   X,
-  Share2,
   Loader2,
+  QrCode,
+  Image as ImageIcon,
+  FileArchive,
+  ExternalLink,
+  Smartphone,
 } from 'lucide-react'
 import {
   getArchive,
@@ -21,20 +26,26 @@ import {
   clearArchive,
   type ArchiveItem,
 } from '../../lib/db'
+import { uploadPhotoStrip } from '../../lib/upload'
 
 export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => void }) {
   const [items, setItems] = useState<ArchiveItem[]>([])
   const [loading, setLoading] = useState(true)
   const [zipping, setZipping] = useState(false)
   const [zipProgress, setZipProgress] = useState(0)
+  const [rawZipping, setRawZipping] = useState(false)
   const [search, setSearch] = useState('')
   const [filterFav, setFilterFav] = useState(false)
   const [selectedItem, setSelectedItem] = useState<ArchiveItem | null>(null)
-  const [activeModal, setActiveModal] = useState<'detail' | 'print' | 'social' | null>(null)
+  const [activeModal, setActiveModal] = useState<'detail' | 'print' | 'social' | 'qr' | null>(null)
   const [printLayout, setPrintLayout] = useState<'double_4x6' | 'single' | 'sheet_4x6'>('double_4x6')
   const [socialFormat, setSocialFormat] = useState<'story' | 'square'>('square')
   const [socialDataUrl, setSocialDataUrl] = useState<string>('')
   const [copying, setCopying] = useState(false)
+  const [copiedLink, setCopiedLink] = useState(false)
+  const [qrDataUrl, setQrDataUrl] = useState<string>('')
+  const [qrLink, setQrLink] = useState<string>('')
+  const [qrLoading, setQrLoading] = useState(false)
 
   const loadData = async () => {
     setLoading(true)
@@ -54,34 +65,166 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
   const handleDelete = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
     if (!confirm('Are you sure you want to delete this photo session from the archive?')) return
-    await deleteArchiveItem(id)
+    setItems((prev) => prev.filter((it) => it.id !== id))
     if (selectedItem?.id === id) {
       setSelectedItem(null)
       setActiveModal(null)
     }
-    await loadData()
+    await deleteArchiveItem(id)
+    onStatsChange?.()
   }
 
   const handleFavorite = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
-    await toggleArchiveFavorite(id)
-    await loadData()
+    setItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, favorite: !it.favorite } : it))
+    )
     if (selectedItem && selectedItem.id === id) {
       setSelectedItem((prev) => (prev ? { ...prev, favorite: !prev.favorite } : null))
     }
+    await toggleArchiveFavorite(id)
+    onStatsChange?.()
   }
 
   const handleClearAll = async () => {
     if (!confirm('WARNING: This will permanently delete ALL archived photos. Are you sure?')) return
-    await clearArchive()
+    setItems([])
     setSelectedItem(null)
     setActiveModal(null)
-    await loadData()
+    await clearArchive()
+    onStatsChange?.()
+  }
+
+  // Open QR modal and generate/ensure Supabase URL on live Vercel domain
+  const handleOpenQR = async (item: ArchiveItem) => {
+    setSelectedItem(item)
+    setActiveModal('qr')
+    setQrLoading(true)
+    setQrDataUrl('')
+    setQrLink('')
+
+    try {
+      // 1. Target URL defaults to the deployed Vercel domain viewer route
+      let targetUrl = `${window.location.origin}/?photo=${item.id}`
+
+      // 2. Trigger background cloud upload so mobile scanners can fetch the images
+      try {
+        const uploadedUrl = await uploadPhotoStrip(item.stripDataUrl, item.rawFrames || [], item.id)
+        if (uploadedUrl) {
+          targetUrl = uploadedUrl
+        }
+      } catch (err) {
+        console.warn('Cloud upload warning for QR (fallback to direct URL):', err)
+      }
+
+      setQrLink(targetUrl)
+
+      // 3. Generate high contrast QR code
+      const codeUrl = await QRCode.toDataURL(targetUrl, {
+        margin: 1,
+        width: 280,
+        color: { dark: '#1e293b', light: '#ffffff' },
+      })
+      setQrDataUrl(codeUrl)
+    } catch (err) {
+      console.error('QR code generation error:', err)
+    } finally {
+      setQrLoading(false)
+    }
+  }
+
+  // Download Framed Composite Strip (.PNG)
+  const downloadFramed = (item: ArchiveItem) => {
+    const a = document.createElement('a')
+    a.href = item.stripDataUrl
+    a.download = `itguild-photobooth-${item.id}-framed.png`
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => document.body.removeChild(a), 500)
+  }
+
+  // Download Individual Raw Captures as ZIP without the frame
+  const downloadRawZip = async (item: ArchiveItem) => {
+    if (!item.rawFrames || item.rawFrames.length === 0) {
+      alert('No individual camera captures saved for this session.')
+      return
+    }
+    setRawZipping(true)
+    try {
+      const zip = new JSZip()
+      const folder = zip.folder(`raw-photos-${item.id}`) || zip
+      item.rawFrames.forEach((rf, i) => {
+        if (!rf) return
+        const base64Data = rf.split(',')[1] || rf
+        folder.file(`photo-capture-${i + 1}.jpg`, base64Data, { base64: true })
+      })
+
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `itguild-photobooth-${item.id}-raw-photos.zip`
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => {
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      }, 1000)
+    } catch (err) {
+      console.error('Raw ZIP generation error:', err)
+      alert('Failed to generate raw captures ZIP.')
+    } finally {
+      setRawZipping(false)
+    }
+  }
+
+  // Download Complete Session as ZIP (Framed Strip + Raw Captures)
+  const downloadSessionAllZip = async (item: ArchiveItem) => {
+    setRawZipping(true)
+    try {
+      const zip = new JSZip()
+      const folder = zip.folder(`session-${item.id}`) || zip
+
+      // 1. Framed strip
+      const stripBase64 = item.stripDataUrl.split(',')[1] || item.stripDataUrl
+      folder.file(`framed-strip.png`, stripBase64, { base64: true })
+
+      // 2. Raw individual photos
+      if (item.rawFrames && item.rawFrames.length > 0) {
+        item.rawFrames.forEach((rf, i) => {
+          if (!rf) return
+          const frameBase64 = rf.split(',')[1] || rf
+          folder.file(`raw-photo-${i + 1}.jpg`, frameBase64, { base64: true })
+        })
+      }
+
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `itguild-photobooth-${item.id}-complete-session.zip`
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => {
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      }, 1000)
+    } catch (err) {
+      console.error('Session ZIP generation error:', err)
+      alert('Failed to generate complete session ZIP.')
+    } finally {
+      setRawZipping(false)
+    }
   }
 
   const handlePrint = async (item: ArchiveItem) => {
-    await incrementPrintCount(item.id)
-    await loadData()
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === item.id ? { ...it, printedCount: (it.printedCount || 0) + 1 } : it
+      )
+    )
+    incrementPrintCount(item.id).catch(() => {})
+    onStatsChange?.()
 
     // Open print window with dedicated photobooth print stylesheet
     const printWin = window.open('', '_blank')
@@ -216,6 +359,17 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
     }
   }
 
+  const copyQrLink = async () => {
+    if (!qrLink) return
+    try {
+      await navigator.clipboard.writeText(qrLink)
+      setCopiedLink(true)
+      setTimeout(() => setCopiedLink(false), 2500)
+    } catch {
+      // Fallback
+    }
+  }
+
   const downloadAll = async () => {
     if (items.length === 0 || zipping) return
     setZipping(true)
@@ -334,7 +488,7 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
         <div className="py-16 text-center bg-white/60 rounded-xl bevel-in p-8">
           <p className="font-pixel text-sm text-[#8198ed] mb-2">No photos in archive yet</p>
           <p className="font-pixel text-[10px] text-[#8792c4]">
-            Take photos in the photobooth and they will automatically appear here for printing and posting!
+            Take photos in the photobooth and they will automatically appear here for viewing, printing, scanning QR, and downloading!
           </p>
         </div>
       ) : (
@@ -355,12 +509,15 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
                   <img
                     src={item.stripDataUrl}
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-contain pointer-events-none"
                   />
                   {/* Favorite star */}
                   <button
                     onClick={(e) => handleFavorite(item.id, e)}
                     className="absolute top-1.5 right-1.5 text-sm p-1 rounded bg-black/40 hover:bg-black/70 text-white leading-none transition-all"
+                    title="Toggle Favorite"
                   >
                     <Star className={`w-3.5 h-3.5 ${item.favorite ? 'text-amber-400 fill-amber-400' : 'text-white'}`} />
                   </button>
@@ -384,6 +541,17 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
                     </p>
                   </div>
                   <div className="flex gap-1">
+                    {/* Dedicated QR Button on each photo card */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleOpenQR(item)
+                      }}
+                      title="View / Scan Mobile QR Code"
+                      className="text-xs p-1 hover:bg-[#eef2ff] rounded text-[#5b7fcb]"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
@@ -438,13 +606,19 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
                   {activeModal === 'detail' && (
                     <>
                       <Camera className="w-4 h-4" />
-                      <span>Photo Session Detail</span>
+                      <span>Photo Session Overview</span>
+                    </>
+                  )}
+                  {activeModal === 'qr' && (
+                    <>
+                      <QrCode className="w-4 h-4" />
+                      <span>Mobile Softcopy QR Code</span>
                     </>
                   )}
                   {activeModal === 'print' && (
                     <>
                       <Printer className="w-4 h-4" />
-                      <span>Print Photo Strip</span>
+                      <span>Print Studio</span>
                     </>
                   )}
                   {activeModal === 'social' && (
@@ -457,7 +631,7 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
               </div>
               <button
                 onClick={() => setActiveModal(null)}
-                className="font-pixel text-xs text-[#8792c4] hover:text-red-500 font-bold px-2 py-1 flex items-center gap-1"
+                className="font-pixel text-xs text-[#8792c4] hover:text-red-500 font-bold px-2 py-1 flex items-center gap-1 cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
                 <span>Close</span>
@@ -465,12 +639,19 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
             </div>
 
             {/* Modal Tabs / Mode Switcher */}
-            <div className="flex gap-2 mb-4">
+            <div className="flex flex-wrap gap-2 mb-4">
               <button
                 onClick={() => setActiveModal('detail')}
                 className={`btn95 !px-3 !py-1 text-xs ${activeModal === 'detail' ? 'is-primary' : ''}`}
               >
                 Overview
+              </button>
+              <button
+                onClick={() => handleOpenQR(selectedItem)}
+                className={`btn95 !px-3 !py-1 text-xs flex items-center gap-1 ${activeModal === 'qr' ? 'is-primary' : ''}`}
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                <span>QR Code (Mobile Scan)</span>
               </button>
               <button
                 onClick={() => setActiveModal('print')}
@@ -514,51 +695,205 @@ export default function ArchiveTab({ onStatsChange }: { onStatsChange?: () => vo
                       </p>
                     </div>
 
-                    {/* Raw Captured Frames */}
+                    {/* Raw Captured Frames (Without Frame) */}
                     {selectedItem.rawFrames && selectedItem.rawFrames.length > 0 && (
-                      <div>
-                        <p className="font-pixel text-[9px] text-[#8198ed] mb-1.5">
-                          Individual Camera Captures ({selectedItem.rawFrames.length}):
-                        </p>
-                        <div className="grid grid-cols-4 gap-1.5">
+                      <div className="bg-white p-3 rounded bevel-in space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="font-pixel text-[9px] text-[#8198ed]">
+                            Raw Camera Captures ({selectedItem.rawFrames.length}):
+                          </p>
+                          <span className="text-[9px] font-sans text-slate-400">
+                            (Click any photo to download individually)
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-2">
                           {selectedItem.rawFrames.map((f, i) => (
                             <a
                               key={i}
                               href={f}
-                              download={`shot-${i + 1}.png`}
-                              className="relative aspect-[4/3] rounded overflow-hidden border border-[#cdd6f0] hover:scale-105 transition-transform"
+                              download={`raw-capture-${i + 1}.png`}
+                              className="group/raw relative aspect-[4/3] rounded overflow-hidden border border-[#cdd6f0] hover:scale-105 transition-transform block bg-slate-900 shadow-xs"
+                              title={`Download Raw Capture #${i + 1}`}
                             >
                               <img src={f} alt="" className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/raw:opacity-100 transition-opacity flex items-center justify-center text-white">
+                                <Download className="w-4 h-4" />
+                              </div>
+                              <span className="absolute bottom-1 left-1 font-pixel text-[7px] text-white bg-black/60 px-1 rounded">
+                                #{i + 1}
+                              </span>
                             </a>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    <div className="flex flex-wrap gap-2 pt-2">
+                    {/* Download & Action Options */}
+                    <div className="bg-white p-3 rounded bevel-in space-y-2.5">
+                      <p className="font-pixel text-[9px] text-[#5b7fcb] font-bold">
+                        Download & Export Options:
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {/* Option 1: Download Framed Strip */}
+                        <button
+                          onClick={() => downloadFramed(selectedItem)}
+                          className="btn95 is-primary !px-3.5 !py-2 text-xs font-bold flex items-center gap-1.5"
+                          title="Download photo strip with background, stickers, and custom text"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          <span>Download Framed (.PNG)</span>
+                        </button>
+
+                        {/* Option 2: Download Raw Captures without Frame (ZIP) */}
+                        {selectedItem.rawFrames && selectedItem.rawFrames.length > 0 && (
+                          <button
+                            onClick={() => downloadRawZip(selectedItem)}
+                            disabled={rawZipping}
+                            className="btn95 !px-3.5 !py-2 text-xs font-bold flex items-center gap-1.5 !bg-[#e0f2fe] !text-[#0369a1] !border-[#7dd3fc]"
+                            title="Download all original camera captures without any frame"
+                          >
+                            <FileArchive className="w-3.5 h-3.5" />
+                            <span>Download Raw (.ZIP)</span>
+                          </button>
+                        )}
+
+                        {/* Option 3: Download Complete Session (Framed + Raw) */}
+                        <button
+                          onClick={() => downloadSessionAllZip(selectedItem)}
+                          disabled={rawZipping}
+                          className="btn95 !px-3.5 !py-2 text-xs font-bold flex items-center gap-1.5 !bg-[#ecfdf5] !text-[#047857] !border-[#6ee7b7]"
+                          title="Download Framed Strip + all raw photos together in one ZIP"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Complete Session (.ZIP)</span>
+                        </button>
+
+                        {/* Option 4: View QR */}
+                        <button
+                          onClick={() => handleOpenQR(selectedItem)}
+                          className="btn95 !px-3.5 !py-2 text-xs font-bold flex items-center gap-1.5 text-[#5b7fcb]"
+                        >
+                          <QrCode className="w-3.5 h-3.5" />
+                          <span>Show QR Code</span>
+                        </button>
+
+                        {/* Print */}
+                        <button
+                          onClick={() => setActiveModal('print')}
+                          className="btn95 !px-3.5 !py-2 text-xs font-bold flex items-center gap-1.5"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>Print</span>
+                        </button>
+
+                        {/* Delete */}
+                        <button
+                          onClick={() => handleDelete(selectedItem.id)}
+                          className="btn95 !px-3 !py-2 text-xs text-red-600 hover:!bg-red-50 flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Content: QR Code Tab */}
+            {activeModal === 'qr' && (
+              <div className="space-y-4">
+                <div className="bg-white p-5 rounded-2xl bevel-in flex flex-col items-center gap-4 text-center">
+                  <div className="flex items-center gap-2 text-[#5b7fcb]">
+                    <Smartphone className="w-5 h-5 animate-pulse" />
+                    <h3 className="font-pixel text-xs sm:text-sm font-bold">
+                      Scan on Mobile to View & Download
+                    </h3>
+                  </div>
+
+                  <div className="relative p-4 bg-white rounded-2xl shadow-lg border-2 border-[#8198ed] flex items-center justify-center min-w-[240px] min-h-[240px]">
+                    {qrLoading ? (
+                      <div className="flex flex-col items-center gap-2 text-[#8198ed]">
+                        <Loader2 className="w-8 h-8 animate-spin" />
+                        <span className="font-pixel text-[10px]">Connecting to Cloud...</span>
+                      </div>
+                    ) : qrDataUrl ? (
+                      <img
+                        src={qrDataUrl}
+                        alt="Photo QR Code"
+                        className="w-[220px] h-[220px] block"
+                      />
+                    ) : (
+                      <span className="font-pixel text-xs text-rose-500">Failed to generate QR</span>
+                    )}
+                  </div>
+
+                  {/* Instructions */}
+                  <div className="w-full max-w-md bg-[#f0f4ff] rounded-xl p-3 border border-[#d2dfff] text-left space-y-1.5">
+                    <p className="font-sans text-xs text-[#5b7fcb] leading-relaxed">
+                      📱 <strong>Mobile Scan:</strong> Open your smartphone camera app and point it at this QR code. It opens the softcopy portal on Vercel where users can download both the <strong>Framed Strip</strong> and <strong>Raw Photos</strong> directly to their phone gallery.
+                    </p>
+                    <p className="font-sans text-[11px] text-[#5b7fcb]/85 border-t border-[#d2dfff]/60 pt-1.5">
+                      ⏳ <strong>Storage:</strong> Softcopy downloads remain active in cloud storage for <strong>30 days</strong>.
+                    </p>
+                  </div>
+
+                  {/* URL Direct Link & Copy */}
+                  {qrLink && (
+                    <div className="w-full max-w-md flex items-center gap-2 bg-[#f8fafc] p-2 rounded-lg bevel-in">
+                      <input
+                        type="text"
+                        readOnly
+                        value={qrLink}
+                        className="flex-1 bg-transparent font-mono text-xs text-slate-600 outline-none truncate px-1"
+                      />
+                      <button
+                        onClick={copyQrLink}
+                        className="btn95 !px-3 !py-1 text-xs font-bold flex items-center gap-1"
+                      >
+                        {copiedLink ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
                       <a
-                        href={selectedItem.stripDataUrl}
-                        download={`photobooth-${selectedItem.id}.png`}
-                        className="btn95 is-primary !px-4 !py-2 text-xs font-bold flex items-center gap-1.5"
+                        href={qrLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn95 !px-2.5 !py-1 text-xs flex items-center gap-1"
+                        title="Open in new tab"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    {qrDataUrl && (
+                      <a
+                        href={qrDataUrl}
+                        download={`photobooth-${selectedItem.id}-qrcode.png`}
+                        className="btn95 is-primary !px-5 !py-2 text-xs font-bold flex items-center gap-1.5"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        <span>Download High-Res PNG</span>
+                        <span>Download QR Image (.PNG)</span>
                       </a>
-                      <button
-                        onClick={() => setActiveModal('print')}
-                        className="btn95 !px-4 !py-2 text-xs font-bold flex items-center gap-1.5"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span>Print</span>
-                      </button>
-                      <button
-                        onClick={() => handleDelete(selectedItem.id)}
-                        className="btn95 !px-3 !py-2 text-xs text-red-600 hover:!bg-red-50 flex items-center gap-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete</span>
-                      </button>
-                    </div>
+                    )}
+                    <button
+                      onClick={() => setActiveModal('detail')}
+                      className="btn95 !px-4 !py-2 text-xs"
+                    >
+                      Back to Overview
+                    </button>
                   </div>
                 </div>
               </div>

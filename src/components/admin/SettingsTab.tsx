@@ -249,26 +249,124 @@ export default function SettingsTab({ onSettingsChange }: { onSettingsChange?: (
           </div>
         </div>
 
-        {/* Public Softcopy & QR Cloud Delivery */}
+        {/* Supabase Cloud Storage & Vercel Settings */}
+        <div className="bg-white p-4 rounded-xl bevel-in space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <h2 className="font-pixel text-xs sm:text-sm text-[#5b7fcb]">
+              Supabase Cloud Storage (Vercel Integration)
+            </h2>
+            <span className="text-[9px] text-[#52b788] font-mono font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+              Free Tier Supported
+            </span>
+          </div>
+
+          <p className="font-sans text-xs text-slate-500 leading-relaxed">
+            Connect your free <strong>Supabase</strong> project to automatically host all guest softcopies and photo strips in the cloud with zero cold starts and instant QR downloads.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block font-pixel text-[10px] text-[#5b7fcb] mb-1">
+                Supabase Project URL
+              </label>
+              <input
+                type="text"
+                value={settings.supabaseUrl || ''}
+                onChange={(e) => setSettings({ ...settings, supabaseUrl: e.target.value })}
+                placeholder="https://xyzabcdefg.supabase.co"
+                className="w-full bg-[#f8fafc] bevel-in px-3 py-2 text-xs font-mono outline-none rounded"
+              />
+              <p className="font-sans text-[10px] text-slate-400 mt-1">
+                Found in Supabase Dashboard &gt; Project Settings &gt; API
+              </p>
+            </div>
+
+            <div>
+              <label className="block font-pixel text-[10px] text-[#5b7fcb] mb-1">
+                Supabase Anon / Public API Key
+              </label>
+              <input
+                type="password"
+                value={settings.supabaseAnonKey || ''}
+                onChange={(e) => setSettings({ ...settings, supabaseAnonKey: e.target.value })}
+                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                className="w-full bg-[#f8fafc] bevel-in px-3 py-2 text-xs font-mono outline-none rounded"
+              />
+              <p className="font-sans text-[10px] text-slate-400 mt-1">
+                Found in Supabase Dashboard &gt; Project Settings &gt; API (<code>anon</code> public key)
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+            <div>
+              <label className="block font-pixel text-[10px] text-[#5b7fcb] mb-1">
+                Storage Bucket Name
+              </label>
+              <input
+                type="text"
+                value={settings.supabaseBucket || 'photobooth'}
+                onChange={(e) => setSettings({ ...settings, supabaseBucket: e.target.value })}
+                placeholder="photobooth"
+                className="w-full bg-[#f8fafc] bevel-in px-3 py-2 text-xs font-mono outline-none rounded"
+              />
+              <p className="font-sans text-[10px] text-slate-400 mt-1">
+                Make sure this bucket is set to <strong>Public</strong> in Supabase Storage.
+              </p>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!settings.supabaseUrl || !settings.supabaseAnonKey) {
+                    alert('Please enter your Supabase Project URL and Anon Key first.')
+                    return
+                  }
+                  try {
+                    const res = await fetch(`${settings.supabaseUrl.replace(/\/$/, '')}/rest/v1/`, {
+                      headers: {
+                        apikey: settings.supabaseAnonKey,
+                        Authorization: `Bearer ${settings.supabaseAnonKey}`,
+                      },
+                    })
+                    if (res.ok || res.status === 200 || res.status === 404) {
+                      alert('✅ Successfully connected to your Supabase project!')
+                    } else {
+                      alert(`⚠️ Received status ${res.status}. Please double check your URL and Key.`)
+                    }
+                  } catch (err: any) {
+                    alert(`❌ Connection failed: ${err.message}`)
+                  }
+                }}
+                className="btn95 is-accent !px-4 !py-2 text-xs font-bold"
+              >
+                Test Supabase Connection
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Public Softcopy & QR Server Fallback */}
         <div className="bg-white p-4 rounded-xl bevel-in space-y-4">
           <h2 className="font-pixel text-xs sm:text-sm text-[#5b7fcb] pb-2 border-b border-slate-100 flex items-center justify-between">
-            <span>Public Cloud QR Server URL</span>
-            <span className="text-[9px] text-[#8198ed] font-mono font-normal">Railway Hosted</span>
+            <span>Fallback Server Domain (Railway / Self-Hosted)</span>
+            <span className="text-[9px] text-slate-400 font-mono font-normal">Optional</span>
           </h2>
 
           <div>
             <label className="block font-pixel text-[10px] text-[#5b7fcb] mb-1">
-              Public QR Endpoint / Domain
+              Custom Public Domain
             </label>
             <input
               type="text"
               value={settings.publicServerUrl || ''}
               onChange={(e) => setSettings({ ...settings, publicServerUrl: e.target.value })}
-              placeholder="https://esportcup.up.railway.app"
+              placeholder="https://your-photobooth.vercel.app"
               className="w-full bg-[#f8fafc] bevel-in px-3 py-2 text-xs font-mono outline-none rounded"
             />
             <p className="font-sans text-[10px] text-slate-400 mt-1">
-              When taking photos on this local computer, QR codes point directly to this domain (e.g. <code>https://esportcup.up.railway.app/photo/xxx</code>) so guests only get the download page and cannot access your local photobooth machine or admin controls.
+              If running in local booth kiosk mode, QR codes will point to this domain so mobile users are routed to your cloud instance.
             </p>
           </div>
         </div>
