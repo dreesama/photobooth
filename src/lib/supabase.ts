@@ -1,11 +1,16 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import { getSettings } from './db'
+import { getSettings, type ArchiveItem } from './db'
 
 let cachedClient: SupabaseClient | null = null
 let cachedConfigKey = ''
 
+const FALLBACK_URL = 'https://vygozdxjuflsyadcataw.supabase.co'
+const FALLBACK_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ5Z296ZHhqdWZsc3lhZGNhdGF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyNTkwNTEsImV4cCI6MjEwNDgzNTA1MX0.rhbMEYlHXNIi6SxfZd476a8b6Zl1lYj4ijyg2FBxlA4'
+const FALLBACK_BUCKET = 'photobooth'
+
 /**
- * Get the Supabase credentials from Vite environment variables or Admin Settings
+ * Get the Supabase credentials from Vite environment variables, Admin Settings, or hardcoded fallbacks
  */
 export async function getSupabaseConfig(): Promise<{
   url: string
@@ -18,9 +23,9 @@ export async function getSupabaseConfig(): Promise<{
 
   const settings = await getSettings().catch(() => null)
 
-  const url = (settings?.supabaseUrl || envUrl || '').trim()
-  const key = (settings?.supabaseAnonKey || envKey || '').trim()
-  const bucket = (settings?.supabaseBucket || envBucket || 'photobooth').trim()
+  const url = (settings?.supabaseUrl || envUrl || FALLBACK_URL).trim()
+  const key = (settings?.supabaseAnonKey || envKey || FALLBACK_KEY).trim()
+  const bucket = (settings?.supabaseBucket || envBucket || FALLBACK_BUCKET).trim()
 
   return { url, key, bucket }
 }
@@ -163,6 +168,25 @@ export async function uploadToSupabase(
       : ''
   const viewerUrl = `${baseUrl}/?photo=${id}`
 
+  // 4. Save metadata json in the session folder
+  try {
+    const metaBlob = new Blob(
+      [
+        JSON.stringify({
+          id,
+          stripUrl,
+          frameUrls: frameUrls.filter(Boolean),
+          timestamp: Date.now(),
+        }),
+      ],
+      { type: 'application/json' }
+    )
+    await client.storage.from(bucket).upload(`${id}/meta.json`, metaBlob, {
+      contentType: 'application/json',
+      upsert: true,
+    })
+  } catch {}
+
   return {
     id,
     viewerUrl,
@@ -203,3 +227,165 @@ export async function getPhotoFromSupabase(
     return null
   }
 }
+
+/* ================= CLOUD ARCHIVE SYNCHRONIZATION (SUPABASE) ================= */
+
+const ARCHIVE_INDEX_PATH = '_archive_index.json'
+
+/**
+ * Save / Update Archive Item in Supabase Cloud
+ */
+export async function saveArchiveToSupabase(item: ArchiveItem): Promise<void> {
+  const client = await getSupabaseClient()
+  if (!client) return
+  const { bucket } = await getSupabaseConfig()
+
+  try {
+    // 1. Fetch current index
+    const currentList = await getArchiveFromSupabase().catch(() => [])
+    const filtered = currentList.filter((x) => x.id !== item.id)
+    const updatedList = [item, ...filtered]
+
+    // 2. Upload updated _archive_index.json
+    const blob = new Blob([JSON.stringify(updatedList)], { type: 'application/json' })
+    await client.storage.from(bucket).upload(ARCHIVE_INDEX_PATH, blob, {
+      contentType: 'application/json',
+      upsert: true,
+    })
+  } catch (err) {
+    console.warn('Failed to sync archive to Supabase:', err)
+  }
+}
+
+/**
+ * Fetch entire Photo Archive from Supabase Cloud (works in Incognito & across all devices)
+ */
+export async function getArchiveFromSupabase(): Promise<ArchiveItem[]> {
+  const client = await getSupabaseClient()
+  if (!client) return []
+  const { bucket } = await getSupabaseConfig()
+
+  try {
+    // 1. Try reading _archive_index.json
+    const { data, error } = await client.storage.from(bucket).download(ARCHIVE_INDEX_PATH)
+    if (!error && data) {
+      const text = await data.text()
+      const parsed = JSON.parse(text)
+      if (Array.isArray(parsed)) {
+        return parsed.sort((a, b) => b.timestamp - a.timestamp)
+      }
+    }
+
+    // 2. Fallback: List root folders in bucket and reconstruct items
+    const { data: rootFolders, error: listError } = await client.storage.from(bucket).list()
+    if (listError || !rootFolders) return []
+
+    const reconstructed: ArchiveItem[] = []
+    const folderItems = rootFolders.filter((f) => f.name && !f.name.startsWith('_') && !f.name.includes('.'))
+
+    await Promise.all(
+      folderItems.slice(0, 50).map(async (folder) => {
+        try {
+          const id = folder.name
+          const stripUrl = client.storage.from(bucket).getPublicUrl(`${id}/strip.jpg`).data.publicUrl
+          const { data: subFiles } = await client.storage.from(bucket).list(id)
+          const rawFrames: string[] = []
+          if (subFiles) {
+            subFiles
+              .filter((sf) => sf.name.startsWith('frame_'))
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .forEach((sf) => {
+                rawFrames.push(client.storage.from(bucket).getPublicUrl(`${id}/${sf.name}`).data.publicUrl)
+              })
+          }
+
+          reconstructed.push({
+            id,
+            timestamp: folder.created_at ? new Date(folder.created_at).getTime() : Date.now(),
+            stripDataUrl: stripUrl,
+            rawFrames,
+            templateId: '2x6',
+            filter: 'original',
+            favorite: false,
+            printedCount: 0,
+          })
+        } catch {}
+      })
+    )
+
+    return reconstructed.sort((a, b) => b.timestamp - a.timestamp)
+  } catch (err) {
+    console.warn('Error reading archive from Supabase:', err)
+    return []
+  }
+}
+
+/**
+ * Delete Archive Item from Supabase Cloud
+ */
+export async function deleteArchiveFromSupabase(id: string): Promise<void> {
+  const client = await getSupabaseClient()
+  if (!client) return
+  const { bucket } = await getSupabaseConfig()
+
+  try {
+    // 1. Delete folder contents
+    const { data: files } = await client.storage.from(bucket).list(id)
+    if (files && files.length > 0) {
+      const paths = files.map((f) => `${id}/${f.name}`)
+      await client.storage.from(bucket).remove(paths)
+    }
+
+    // 2. Update _archive_index.json
+    const currentList = await getArchiveFromSupabase().catch(() => [])
+    const updated = currentList.filter((x) => x.id !== id)
+    const blob = new Blob([JSON.stringify(updated)], { type: 'application/json' })
+    await client.storage.from(bucket).upload(ARCHIVE_INDEX_PATH, blob, {
+      contentType: 'application/json',
+      upsert: true,
+    })
+  } catch (err) {
+    console.warn('Error deleting from Supabase:', err)
+  }
+}
+
+/**
+ * Toggle Favorite in Supabase Cloud
+ */
+export async function toggleArchiveFavoriteInSupabase(id: string): Promise<void> {
+  const client = await getSupabaseClient()
+  if (!client) return
+  const { bucket } = await getSupabaseConfig()
+
+  try {
+    const currentList = await getArchiveFromSupabase().catch(() => [])
+    const updated = currentList.map((x) => (x.id === id ? { ...x, favorite: !x.favorite } : x))
+    const blob = new Blob([JSON.stringify(updated)], { type: 'application/json' })
+    await client.storage.from(bucket).upload(ARCHIVE_INDEX_PATH, blob, {
+      contentType: 'application/json',
+      upsert: true,
+    })
+  } catch (err) {
+    console.warn('Error toggling favorite in Supabase:', err)
+  }
+}
+
+/**
+ * Clear All Archive in Supabase Cloud
+ */
+export async function clearArchiveInSupabase(): Promise<void> {
+  const client = await getSupabaseClient()
+  if (!client) return
+  const { bucket } = await getSupabaseConfig()
+
+  try {
+    const blob = new Blob([JSON.stringify([])], { type: 'application/json' })
+    await client.storage.from(bucket).upload(ARCHIVE_INDEX_PATH, blob, {
+      contentType: 'application/json',
+      upsert: true,
+    })
+  } catch (err) {
+    console.warn('Error clearing archive in Supabase:', err)
+  }
+}
+

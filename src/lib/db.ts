@@ -1,4 +1,11 @@
 // IndexedDB storage layer for Photo Archive, Custom Assets (Props, Stickers, Frames), and Event Settings
+import {
+  saveArchiveToSupabase,
+  getArchiveFromSupabase,
+  deleteArchiveFromSupabase,
+  toggleArchiveFavoriteInSupabase,
+  clearArchiveInSupabase,
+} from './supabase'
 
 export type ArchiveItem = {
   id: string
@@ -164,13 +171,16 @@ export async function saveToArchive(
     _archiveCache = [completeItem]
   }
 
-  // 1. Sync to Cloud Server
+  // 1. Sync to Supabase Cloud Storage (accessible across all devices & Incognito)
+  saveArchiveToSupabase(completeItem).catch(() => {})
+
+  // 2. Sync to local backend server if running
   syncFetch('/api/sync/archive', {
     method: 'POST',
     body: JSON.stringify(completeItem),
   }).catch(() => {})
 
-  // 2. Persist to Local IndexedDB
+  // 3. Persist to Local IndexedDB
   return new Promise((resolve, reject) => {
     const tx = db.transaction('archive', 'readwrite')
     const store = tx.objectStore('archive')
@@ -182,7 +192,7 @@ export async function saveToArchive(
 
 export async function getArchive(forceRefresh = false): Promise<ArchiveItem[]> {
   // 1. Instant 0ms response from In-Memory Cache
-  if (!forceRefresh && _archiveCache !== null) {
+  if (!forceRefresh && _archiveCache !== null && _archiveCache.length > 0) {
     return [..._archiveCache]
   }
 
@@ -204,31 +214,48 @@ export async function getArchive(forceRefresh = false): Promise<ArchiveItem[]> {
     }
   })
 
+  // If local items exist and not forcing refresh, return immediately while syncing cloud in background
   if (localItems.length > 0 && !forceRefresh) {
     _archiveCache = localItems
 
-    // Background sync from server without blocking UI
-    if (!_archiveFetchPromise) {
-      _archiveFetchPromise = syncFetch<ArchiveItem[]>('/api/sync/archive')
-        .then((serverItems) => {
-          if (serverItems && Array.isArray(serverItems) && serverItems.length > 0) {
-            _archiveCache = serverItems.sort((a, b) => b.timestamp - a.timestamp)
-            try {
-              const tx = db.transaction('archive', 'readwrite')
-              const store = tx.objectStore('archive')
-              serverItems.forEach((it) => store.put(it))
-            } catch {}
-          }
-          return _archiveCache || []
-        })
-        .finally(() => {
-          _archiveFetchPromise = null
-        })
-    }
+    // Background sync from Supabase cloud without blocking UI
+    getArchiveFromSupabase()
+      .then((cloudItems) => {
+        if (cloudItems && cloudItems.length > 0) {
+          const mergedMap = new Map<string, ArchiveItem>()
+          cloudItems.forEach((c) => mergedMap.set(c.id, c))
+          localItems.forEach((l) => mergedMap.set(l.id, l))
+          const merged = Array.from(mergedMap.values()).sort((a, b) => b.timestamp - a.timestamp)
+          _archiveCache = merged
+          try {
+            const tx = db.transaction('archive', 'readwrite')
+            const store = tx.objectStore('archive')
+            merged.forEach((it) => store.put(it))
+          } catch {}
+        }
+      })
+      .catch(() => {})
+
     return [..._archiveCache]
   }
 
-  // 3. Fallback or Force Refresh: Cloud Fetch with Request Deduplication
+  // 3. If Local DB is empty (e.g. Incognito mode or new device), fetch directly from Supabase Cloud
+  try {
+    const cloudItems = await getArchiveFromSupabase()
+    if (cloudItems && cloudItems.length > 0) {
+      _archiveCache = cloudItems
+      try {
+        const tx = db.transaction('archive', 'readwrite')
+        const store = tx.objectStore('archive')
+        cloudItems.forEach((it) => store.put(it))
+      } catch {}
+      return [...cloudItems]
+    }
+  } catch (sbErr) {
+    console.warn('Cloud archive fetch error:', sbErr)
+  }
+
+  // 4. Fallback: Server sync endpoint
   if (!_archiveFetchPromise) {
     _archiveFetchPromise = syncFetch<ArchiveItem[]>('/api/sync/archive')
       .then((serverItems) => {
@@ -260,6 +287,9 @@ export async function deleteArchiveItem(id: string): Promise<void> {
     _archiveCache = _archiveCache.filter((a) => a.id !== id)
   }
 
+  // Delete from Supabase Cloud
+  deleteArchiveFromSupabase(id).catch(() => {})
+
   syncFetch('/api/sync/archive/delete', {
     method: 'POST',
     body: JSON.stringify({ id }),
@@ -286,6 +316,9 @@ export async function toggleArchiveFavorite(id: string): Promise<boolean> {
       return a
     })
   }
+
+  // Sync to Supabase Cloud
+  toggleArchiveFavoriteInSupabase(id).catch(() => {})
 
   syncFetch('/api/sync/archive/favorite', {
     method: 'POST',
@@ -333,6 +366,9 @@ export async function incrementPrintCount(id: string): Promise<number> {
 
 export async function clearArchive(): Promise<void> {
   _archiveCache = []
+
+  // Clear in Supabase Cloud
+  clearArchiveInSupabase().catch(() => {})
 
   syncFetch('/api/sync/archive/clear', {
     method: 'POST',
