@@ -269,51 +269,80 @@ export async function getArchiveFromSupabase(): Promise<ArchiveItem[]> {
     // 1. Try reading _archive_index.json
     const { data, error } = await client.storage.from(bucket).download(ARCHIVE_INDEX_PATH)
     if (!error && data) {
-      const text = await data.text()
-      const parsed = JSON.parse(text)
-      if (Array.isArray(parsed)) {
-        return parsed.sort((a, b) => b.timestamp - a.timestamp)
-      }
+      try {
+        const text = await data.text()
+        const parsed = JSON.parse(text)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.sort((a, b) => b.timestamp - a.timestamp)
+        }
+      } catch {}
     }
 
-    // 2. Fallback: List root folders in bucket and reconstruct items
+    // 2. Fallback: List root folders in bucket and reconstruct all items
     const { data: rootFolders, error: listError } = await client.storage.from(bucket).list()
     if (listError || !rootFolders) return []
 
     const reconstructed: ArchiveItem[] = []
     const folderItems = rootFolders.filter((f) => f.name && !f.name.startsWith('_') && !f.name.includes('.'))
 
-    await Promise.all(
-      folderItems.slice(0, 50).map(async (folder) => {
-        try {
-          const id = folder.name
-          const stripUrl = client.storage.from(bucket).getPublicUrl(`${id}/strip.jpg`).data.publicUrl
-          const { data: subFiles } = await client.storage.from(bucket).list(id)
-          const rawFrames: string[] = []
-          if (subFiles) {
-            subFiles
-              .filter((sf) => sf.name.startsWith('frame_'))
-              .sort((a, b) => a.name.localeCompare(b.name))
-              .forEach((sf) => {
-                rawFrames.push(client.storage.from(bucket).getPublicUrl(`${id}/${sf.name}`).data.publicUrl)
-              })
+    for (const folder of folderItems) {
+      try {
+        const id = folder.name
+        const stripUrl = client.storage.from(bucket).getPublicUrl(`${id}/strip.jpg`).data.publicUrl
+        const { data: subFiles } = await client.storage.from(bucket).list(id)
+        const rawFrames: string[] = []
+        let meta: any = null
+
+        if (subFiles) {
+          subFiles
+            .filter((sf) => sf.name.startsWith('frame_'))
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .forEach((sf) => {
+              rawFrames.push(client.storage.from(bucket).getPublicUrl(`${id}/${sf.name}`).data.publicUrl)
+            })
+
+          const metaFile = subFiles.find((sf) => sf.name === 'meta.json')
+          if (metaFile) {
+            try {
+              const { data: metaBlob } = await client.storage.from(bucket).download(`${id}/meta.json`)
+              if (metaBlob) {
+                meta = JSON.parse(await metaBlob.text())
+              }
+            } catch {}
           }
+        }
 
-          reconstructed.push({
-            id,
-            timestamp: folder.created_at ? new Date(folder.created_at).getTime() : Date.now(),
-            stripDataUrl: stripUrl,
-            rawFrames,
-            templateId: '2x6',
-            filter: 'original',
-            favorite: false,
-            printedCount: 0,
-          })
-        } catch {}
-      })
-    )
+        let timestamp = Date.now()
+        if (id.startsWith('session_') || id.startsWith('strip_')) {
+          const tsPart = parseInt(id.split('_')[1], 10)
+          if (!isNaN(tsPart) && tsPart > 1000000000000) timestamp = tsPart
+        }
 
-    return reconstructed.sort((a, b) => b.timestamp - a.timestamp)
+        reconstructed.push({
+          id,
+          timestamp: meta?.timestamp || timestamp,
+          stripDataUrl: stripUrl,
+          rawFrames,
+          templateId: meta?.templateId || (rawFrames.length > 4 ? 'grid' : '2x6'),
+          filter: meta?.filter || 'original',
+          favorite: Boolean(meta?.favorite),
+          printedCount: meta?.printedCount || 0,
+        })
+      } catch {}
+    }
+
+    const sorted = reconstructed.sort((a, b) => b.timestamp - a.timestamp)
+
+    // Save recovered list back to index file
+    if (sorted.length > 0) {
+      const blob = new Blob([JSON.stringify(sorted)], { type: 'application/json' })
+      await client.storage.from(bucket).upload(ARCHIVE_INDEX_PATH, blob, {
+        contentType: 'application/json',
+        upsert: true,
+      }).catch(() => {})
+    }
+
+    return sorted
   } catch (err) {
     console.warn('Error reading archive from Supabase:', err)
     return []
@@ -321,7 +350,7 @@ export async function getArchiveFromSupabase(): Promise<ArchiveItem[]> {
 }
 
 /**
- * Delete Archive Item from Supabase Cloud
+ * Delete Archive Item from Supabase Cloud (Removes strip, raw frames, and metadata from DB)
  */
 export async function deleteArchiveFromSupabase(id: string): Promise<void> {
   const client = await getSupabaseClient()
@@ -329,7 +358,7 @@ export async function deleteArchiveFromSupabase(id: string): Promise<void> {
   const { bucket } = await getSupabaseConfig()
 
   try {
-    // 1. Delete folder contents
+    // 1. Delete all files in session folder
     const { data: files } = await client.storage.from(bucket).list(id)
     if (files && files.length > 0) {
       const paths = files.map((f) => `${id}/${f.name}`)
@@ -371,7 +400,7 @@ export async function toggleArchiveFavoriteInSupabase(id: string): Promise<void>
 }
 
 /**
- * Clear All Archive in Supabase Cloud
+ * Clear All Archive in Supabase Cloud (Permanently removes all images from cloud database)
  */
 export async function clearArchiveInSupabase(): Promise<void> {
   const client = await getSupabaseClient()
@@ -379,6 +408,19 @@ export async function clearArchiveInSupabase(): Promise<void> {
   const { bucket } = await getSupabaseConfig()
 
   try {
+    const { data: rootItems } = await client.storage.from(bucket).list()
+    if (rootItems && rootItems.length > 0) {
+      for (const item of rootItems) {
+        if (!item.name.startsWith('_') && !item.name.includes('.')) {
+          const { data: subFiles } = await client.storage.from(bucket).list(item.name)
+          if (subFiles && subFiles.length > 0) {
+            const paths = subFiles.map((sf) => `${item.name}/${sf.name}`)
+            await client.storage.from(bucket).remove(paths)
+          }
+        }
+      }
+    }
+
     const blob = new Blob([JSON.stringify([])], { type: 'application/json' })
     await client.storage.from(bucket).upload(ARCHIVE_INDEX_PATH, blob, {
       contentType: 'application/json',
