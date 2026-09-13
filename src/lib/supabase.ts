@@ -266,19 +266,19 @@ export async function getArchiveFromSupabase(): Promise<ArchiveItem[]> {
   const { bucket } = await getSupabaseConfig()
 
   try {
-    // 1. Try reading _archive_index.json
+    // 1. Try reading _archive_index.json (Ground Truth)
     const { data, error } = await client.storage.from(bucket).download(ARCHIVE_INDEX_PATH)
     if (!error && data) {
       try {
         const text = await data.text()
         const parsed = JSON.parse(text)
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed.sort((a, b) => b.timestamp - a.timestamp)
         }
       } catch {}
     }
 
-    // 2. Fallback: List root folders in bucket and reconstruct all items
+    // 2. Fallback only if _archive_index.json does not exist yet: List root folders in bucket and reconstruct items
     const { data: rootFolders, error: listError } = await client.storage.from(bucket).list()
     if (listError || !rootFolders) return []
 

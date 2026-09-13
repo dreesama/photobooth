@@ -288,7 +288,7 @@ export async function deleteArchiveItem(id: string): Promise<void> {
   }
 
   // Delete from Supabase Cloud
-  deleteArchiveFromSupabase(id).catch(() => {})
+  await deleteArchiveFromSupabase(id).catch(() => {})
 
   syncFetch('/api/sync/archive/delete', {
     method: 'POST',
@@ -368,7 +368,7 @@ export async function clearArchive(): Promise<void> {
   _archiveCache = []
 
   // Clear in Supabase Cloud
-  clearArchiveInSupabase().catch(() => {})
+  await clearArchiveInSupabase().catch(() => {})
 
   syncFetch('/api/sync/archive/clear', {
     method: 'POST',
