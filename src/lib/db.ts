@@ -218,19 +218,16 @@ export async function getArchive(forceRefresh = false): Promise<ArchiveItem[]> {
   if (localItems.length > 0 && !forceRefresh) {
     _archiveCache = localItems
 
-    // Background sync from Supabase cloud without blocking UI
+    // Background sync from Supabase cloud: cloud is the authority
     getArchiveFromSupabase()
-      .then((cloudItems) => {
-        if (cloudItems && cloudItems.length > 0) {
-          const mergedMap = new Map<string, ArchiveItem>()
-          cloudItems.forEach((c) => mergedMap.set(c.id, c))
-          localItems.forEach((l) => mergedMap.set(l.id, l))
-          const merged = Array.from(mergedMap.values()).sort((a, b) => b.timestamp - a.timestamp)
-          _archiveCache = merged
+      .then(async (cloudItems) => {
+        if (cloudItems) {
+          _archiveCache = cloudItems
           try {
             const tx = db.transaction('archive', 'readwrite')
             const store = tx.objectStore('archive')
-            merged.forEach((it) => store.put(it))
+            store.clear()
+            cloudItems.forEach((it) => store.put(it))
           } catch {}
         }
       })
@@ -242,11 +239,12 @@ export async function getArchive(forceRefresh = false): Promise<ArchiveItem[]> {
   // 3. If Local DB is empty (e.g. Incognito mode or new device), fetch directly from Supabase Cloud
   try {
     const cloudItems = await getArchiveFromSupabase()
-    if (cloudItems && cloudItems.length > 0) {
+    if (cloudItems) {
       _archiveCache = cloudItems
       try {
         const tx = db.transaction('archive', 'readwrite')
         const store = tx.objectStore('archive')
+        store.clear()
         cloudItems.forEach((it) => store.put(it))
       } catch {}
       return [...cloudItems]
